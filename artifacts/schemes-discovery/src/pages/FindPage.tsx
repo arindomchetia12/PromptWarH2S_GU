@@ -1,118 +1,479 @@
-import { useState } from 'react';
-import { Link } from 'wouter';
-import { ArrowLeft, ArrowRight, Check, CircleAlert, RotateCcw, ShieldCheck } from 'lucide-react';
-import { useMatchSchemes } from '@workspace/api-client-react';
+import { useMemo, useState } from 'react';
 import type { ProfileAnswers, SchemeMatch } from '@workspace/api-client-react';
+import {
+  ArrowLeft,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  CircleAlert,
+  LayoutGrid,
+  RotateCcw,
+  ShieldCheck,
+  Workflow,
+} from 'lucide-react';
+import { Link } from 'wouter';
+import { MatchReason } from '../components/MatchReason';
+import { OfficialSourceNotice } from '../components/OfficialSourceNotice';
+import { QuestionStep, type GuidedQuestion } from '../components/QuestionStep';
 
-type AnswerKey = keyof ProfileAnswers;
-type Choice = { value: string; label: string };
-type Question = { key: AnswerKey; title: string; help: string; choices: Choice[] };
+interface PipelineStepTrace {
+  step: number;
+  node: string;
+  detail: string;
+}
 
-const questions: Question[] = [
-  { key: 'ageBand', title: 'Which age range are you in?', help: 'Some schemes set age ranges. Your answer is only compared with published criteria.', choices: [
-    { value: 'under18', label: 'Under 18' }, { value: '18to24', label: '18–24' }, { value: '25to34', label: '25–34' }, { value: '35to44', label: '35–44' }, { value: '45to59', label: '45–59' }, { value: '60plus', label: '60 or above' }, { value: 'not_sure', label: 'Not sure' }, { value: 'prefer_not_to_say', label: 'Prefer not to say' },
-  ] },
-  { key: 'state', title: 'Where do you live?', help: 'This helps identify schemes limited to a state or union territory.', choices: [
-    ...['Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh', 'Chhattisgarh', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jammu and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'].map((state) => ({ value: state, label: state })),
-    { value: 'not_sure', label: 'Not sure' }, { value: 'prefer_not_to_say', label: 'Prefer not to say' },
-  ] },
-  { key: 'residence', title: 'How would you describe your area?', help: 'Choose the closest option. Published scheme criteria can use rural or urban residence.', choices: [
-    { value: 'rural', label: 'Rural' }, { value: 'urban', label: 'Urban' }, { value: 'not_sure', label: 'Not sure' }, { value: 'prefer_not_to_say', label: 'Prefer not to say' },
-  ] },
-  { key: 'studentStatus', title: 'Are you currently a student?', help: 'This is used only to compare against criteria published in the scheme directory.', choices: [
-    { value: 'student', label: 'Yes, I am a student' }, { value: 'not_student', label: 'No' }, { value: 'not_sure', label: 'Not sure' }, { value: 'prefer_not_to_say', label: 'Prefer not to say' },
-  ] },
-  { key: 'employmentStatus', title: 'Which best describes your work situation?', help: 'Select the closest description. This answer does not affect any official application.', choices: [
-    { value: 'employed', label: 'Employed' }, { value: 'unemployed', label: 'Not currently employed' }, { value: 'self_employed', label: 'Self-employed' }, { value: 'farmer', label: 'Farmer' }, { value: 'not_sure', label: 'Not sure' }, { value: 'prefer_not_to_say', label: 'Prefer not to say' },
-  ] },
-];
+interface WebhookMatchResponse {
+  cleanedAnswers: ProfileAnswers;
+  pipelineSteps: PipelineStepTrace[];
+  matches: (SchemeMatch & {
+    formatted?: {
+      summaryExplanation: string;
+      nextSteps: string[];
+      requiredDocuments: string[];
+      officialApplicationUrl: string;
+      officialInformationUrl: string;
+    };
+  })[];
+}
 
-const statusText: Record<SchemeMatch['status'], string> = {
-  potential_match: 'Potential match',
-  more_information_needed: 'More information needed',
-  does_not_appear_to_match: 'Does not appear to match',
+const FOCUS_QUESTION: GuidedQuestion = {
+  key: 'focusCategory',
+  title: 'What kind of support are you exploring today?',
+  whyAsked:
+    'Selecting a category lets Suvidha ask only the questions needed for those schemes.',
+  choices: [
+    {
+      value: 'all',
+      label: 'All available schemes',
+      description: 'Check both Education and Agriculture schemes in Assam',
+    },
+    {
+      value: 'Education',
+      label: 'Education & scholarships',
+      description: 'Awards, fee waivers, scholarships, and education loans',
+    },
+    {
+      value: 'Agriculture',
+      label: 'Agriculture & farmer support',
+      description: 'Farm tools, crop insurance, credit subsidies, and solar pumps',
+    },
+  ],
 };
 
-function MatchResult({ match }: { match: SchemeMatch }) {
-  const statusId = `match-status-${match.scheme.id}`;
-  return (
-    <article className="rounded-2xl border border-border bg-card p-5 sm:p-6" data-testid={`card-match-${match.scheme.id}`}>
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div><span id={statusId} className="inline-flex items-center rounded-full border border-border bg-secondary px-3 py-1.5 text-xs font-bold">{statusText[match.status]}</span><h3 className="display-font mt-4 text-2xl leading-tight">{match.scheme.name}</h3><p className="mt-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">{match.scheme.category} · {match.scheme.governmentLevel === 'central' ? 'Central' : 'State'} government</p></div>
-        {match.scheme.demoData && <span className="rounded-full bg-[hsl(var(--accent))]/10 px-3 py-1 text-[10px] font-bold uppercase tracking-wider">Demo record</span>}
-      </div>
-      <p className="mt-4 text-sm leading-6 text-muted-foreground">This is a comparison with the criteria available here, not a decision by the scheme authority.</p>
-      {match.matchedCriteria?.length > 0 && <div className="mt-4"><h4 className="text-sm font-bold">Criteria that appear to align</h4><ul className="mt-2 space-y-2">{match.matchedCriteria.map((criterion, index) => <li className="flex gap-2 text-sm leading-6 text-muted-foreground" key={`${criterion}-${index}`}><Check size={16} className="mt-1 shrink-0 text-primary" />{criterion}</li>)}</ul></div>}
-      {match.criteriaToCheck?.length > 0 && <div className="mt-4 rounded-xl bg-secondary/70 p-4"><h4 className="text-sm font-bold">Still worth checking</h4><ul className="mt-2 space-y-2">{match.criteriaToCheck.map((criterion, index) => <li className="flex gap-2 text-sm leading-6 text-muted-foreground" key={`${criterion}-${index}`}><span aria-hidden="true" className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />{criterion}</li>)}</ul></div>}
-      <Link href={`/schemes/${match.scheme.id}`} className="mt-5 inline-flex items-center gap-2 text-sm font-bold text-primary hover:underline" data-testid={`link-match-details-${match.scheme.id}`}>Read scheme details <ArrowRight size={15} /></Link>
-    </article>
-  );
-}
+const AGE_QUESTION: GuidedQuestion = {
+  key: 'ageBand',
+  title: 'Which age range fits you?',
+  whyAsked: 'Many schemes specify a minimum or maximum age limit.',
+  choices: [
+    { value: 'under18', label: 'Under 18' },
+    { value: '18to24', label: '18 to 24 years' },
+    { value: '25to34', label: '25 to 34 years' },
+    { value: '35to44', label: '35 to 44 years' },
+    { value: '45to59', label: '45 to 59 years' },
+    { value: '60plus', label: '60 years or above' },
+    { value: 'not_sure', label: 'Not sure' },
+    { value: 'prefer_not_to_say', label: 'Prefer not to say' },
+  ],
+};
+
+const STATE_QUESTION: GuidedQuestion = {
+  key: 'state',
+  title: 'Do you live in Assam?',
+  whyAsked:
+    'State schemes require permanent residence or domicile in Assam, while central schemes apply across India.',
+  choices: [
+    { value: 'Assam', label: 'Yes, I live in Assam' },
+    { value: 'Other state in India', label: 'No, another state in India' },
+    { value: 'not_sure', label: 'Not sure' },
+    { value: 'prefer_not_to_say', label: 'Prefer not to say' },
+  ],
+};
+
+const RESIDENCE_QUESTION: GuidedQuestion = {
+  key: 'residence',
+  title: 'Do you live in a rural or urban area?',
+  whyAsked:
+    'Some agricultural and irrigation schemes specifically target rural or non-electrified village areas.',
+  choices: [
+    { value: 'rural', label: 'Rural / Village area' },
+    { value: 'urban', label: 'Urban / Town or city' },
+    { value: 'not_sure', label: 'Not sure' },
+    { value: 'prefer_not_to_say', label: 'Prefer not to say' },
+  ],
+};
+
+const STUDENT_QUESTION: GuidedQuestion = {
+  key: 'studentStatus',
+  title: 'Are you currently a student?',
+  whyAsked:
+    'Scholarships, merit awards, and college fee waivers require active enrollment or recent exam completion.',
+  choices: [
+    { value: 'student', label: 'Yes, I am a student' },
+    { value: 'not_student', label: 'No, not currently studying' },
+    { value: 'not_sure', label: 'Not sure' },
+    { value: 'prefer_not_to_say', label: 'Prefer not to say' },
+  ],
+};
+
+const EMPLOYMENT_QUESTION: GuidedQuestion = {
+  key: 'employmentStatus',
+  title: 'Which best describes your work situation?',
+  whyAsked:
+    'Farmer support, crop insurance, and credit schemes check whether you cultivate crops or work in farming.',
+  choices: [
+    { value: 'farmer', label: 'Farmer / Cultivator' },
+    { value: 'self_employed', label: 'Self-employed / Small business' },
+    { value: 'employed', label: 'Salaried / Employed' },
+    { value: 'unemployed', label: 'Not currently employed' },
+    { value: 'not_sure', label: 'Not sure' },
+    { value: 'prefer_not_to_say', label: 'Prefer not to say' },
+  ],
+};
 
 export default function FindPage() {
   const [step, setStep] = useState(0);
-  const [answers, setAnswers] = useState<Partial<ProfileAnswers>>({});
-  const matchMutation = useMatchSchemes();
-  const activeQuestion = questions[step];
-  const selected = answers[activeQuestion.key] as string | undefined;
-  const hasResults = matchMutation.isSuccess && Array.isArray(matchMutation.data);
-  const results = (matchMutation.data ?? []) as SchemeMatch[];
+  const [formState, setFormState] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [webhookResult, setWebhookResult] = useState<WebhookMatchResponse | null>(null);
+  const [showNonMatches, setShowNonMatches] = useState(false);
+  const [showPipelineTrace, setShowPipelineTrace] = useState(false);
 
-  const selectAnswer = (value: string) => setAnswers((current) => ({ ...current, [activeQuestion.key]: value }));
-  const next = () => {
-    if (!selected) return;
-    if (step < questions.length - 1) setStep((current) => current + 1);
-    else matchMutation.mutate({ data: answers as ProfileAnswers });
+  const focusCategory = formState.focusCategory ?? 'all';
+
+  // Only ask details needed by the selected scheme categories
+  const activeQuestions = useMemo<GuidedQuestion[]>(() => {
+    if (focusCategory === 'Education') {
+      return [FOCUS_QUESTION, AGE_QUESTION, STATE_QUESTION, STUDENT_QUESTION];
+    }
+    if (focusCategory === 'Agriculture') {
+      return [
+        FOCUS_QUESTION,
+        AGE_QUESTION,
+        STATE_QUESTION,
+        RESIDENCE_QUESTION,
+        EMPLOYMENT_QUESTION,
+      ];
+    }
+    return [
+      FOCUS_QUESTION,
+      AGE_QUESTION,
+      STATE_QUESTION,
+      RESIDENCE_QUESTION,
+      STUDENT_QUESTION,
+      EMPLOYMENT_QUESTION,
+    ];
+  }, [focusCategory]);
+
+  const currentQuestion = activeQuestions[Math.min(step, activeQuestions.length - 1)];
+  const selectedValue = formState[currentQuestion.key];
+
+  const handleSelect = (val: string) => {
+    setFormState((prev) => ({ ...prev, [currentQuestion.key]: val }));
   };
-  const restart = () => { setStep(0); setAnswers({}); matchMutation.reset(); };
+
+  const submitToWebhook = async () => {
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      const payload: ProfileAnswers = {
+        ageBand: (formState.ageBand ?? 'not_sure') as ProfileAnswers['ageBand'],
+        state: formState.state ?? 'Assam',
+        residence: (formState.residence ?? 'not_sure') as ProfileAnswers['residence'],
+        studentStatus: (formState.studentStatus ??
+          (focusCategory === 'Agriculture' ? 'not_student' : 'not_sure')) as ProfileAnswers['studentStatus'],
+        employmentStatus: (formState.employmentStatus ??
+          (focusCategory === 'Education' ? 'not_sure' : 'not_sure')) as ProfileAnswers['employmentStatus'],
+      };
+
+      // Webhook flow: Website form -> Webhook -> Edit Fields -> Database -> Code/If -> Sort -> Format -> Respond
+      const res = await fetch('/api/webhook/match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Could not evaluate matching schemes.');
+      }
+
+      const data = (await res.json()) as WebhookMatchResponse;
+      setWebhookResult(data);
+    } catch (err) {
+      setSubmitError(
+        err instanceof Error ? err.message : 'Something went wrong while matching schemes.',
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleNext = () => {
+    if (!selectedValue) return;
+    if (step < activeQuestions.length - 1) {
+      setStep((prev) => prev + 1);
+    } else {
+      submitToWebhook();
+    }
+  };
+
+  const handleBack = () => {
+    setStep((prev) => Math.max(0, prev - 1));
+  };
+
+  const handleEditAnswers = () => {
+    setWebhookResult(null);
+    setStep(0);
+  };
+
+  const handleRestart = () => {
+    setFormState({});
+    setWebhookResult(null);
+    setSubmitError(null);
+    setStep(0);
+    setShowNonMatches(false);
+  };
+
+  const relevantMatches = useMemo(() => {
+    if (!webhookResult) return [];
+    return webhookResult.matches.filter((m) => {
+      const catOk =
+        focusCategory === 'all' ||
+        m.scheme.category.toLowerCase() === focusCategory.toLowerCase();
+      return (
+        catOk &&
+        (m.status === 'potential_match' || m.status === 'more_information_needed')
+      );
+    });
+  }, [webhookResult, focusCategory]);
+
+  const otherMatches = useMemo(() => {
+    if (!webhookResult) return [];
+    const relevantIds = new Set(relevantMatches.map((m) => m.scheme.id));
+    return webhookResult.matches.filter((m) => !relevantIds.has(m.scheme.id));
+  }, [webhookResult, relevantMatches]);
 
   return (
-    <div className="page-wrap py-10 sm:py-14">
-      <div className="mx-auto max-w-[850px]">
-        <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground" data-testid="link-back-to-browse"><ArrowLeft size={16} /> Browse schemes</Link>
-        {!hasResults ? (
-          <div className="mt-8 grid gap-8 lg:grid-cols-[.72fr_1.28fr]">
-            <aside className="rounded-2xl bg-primary p-6 text-primary-foreground sm:p-7">
-              <p className="text-xs font-bold uppercase tracking-[.14em] opacity-75">Find possible matches</p>
-              <h1 className="display-font mt-4 text-4xl leading-[1.05] tracking-[-.03em]">A few answers.<br />A clearer next step.</h1>
-              <p className="mt-5 text-sm leading-6 opacity-80">Compare the details you choose to share with the criteria available in the scheme directory.</p>
-              <div className="mt-7 flex items-start gap-3 border-t border-primary-foreground/20 pt-5 text-xs leading-5 opacity-80"><ShieldCheck size={17} className="mt-0.5 shrink-0" />No account or application details are requested. Answers are used to run this comparison.</div>
-              <div className="mt-7 text-xs leading-5 opacity-75">A match is guidance—not confirmation of eligibility or approval. Always check with the official department.</div>
-            </aside>
-            <section className="rounded-2xl border border-border bg-card p-5 sm:p-8">
-              <div className="mb-7">
-                <div className="mb-3 flex items-center justify-between text-xs font-bold"><span className="uppercase tracking-[.12em] text-muted-foreground">Question {step + 1} of {questions.length}</span><span className="text-primary">{Math.round(((step + 1) / questions.length) * 100)}%</span></div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-secondary" role="progressbar" aria-label="Questionnaire progress" aria-valuemin={0} aria-valuemax={questions.length} aria-valuenow={step + 1}><div className="h-full rounded-full bg-primary transition-all duration-300" style={{ width: `${((step + 1) / questions.length) * 100}%` }} /></div>
-              </div>
-              <h2 className="display-font text-3xl leading-tight tracking-[-.025em] sm:text-4xl">{activeQuestion.title}</h2>
-              <p className="mt-3 text-sm leading-6 text-muted-foreground">{activeQuestion.help}</p>
-              <fieldset className="mt-6">
-                <legend className="sr-only">{activeQuestion.title}</legend>
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {activeQuestion.choices.map((choice) => {
-                    const checked = selected === choice.value;
-                    return <button key={choice.value} type="button" role="radio" aria-checked={checked} onClick={() => selectAnswer(choice.value)} className={`flex min-h-12 items-center justify-between rounded-xl border px-4 py-3 text-left text-sm font-semibold transition-colors ${checked ? 'border-primary bg-primary text-primary-foreground' : 'border-border bg-background hover:border-primary/60 hover:bg-secondary/50'}`} data-testid={`answer-${activeQuestion.key}-${choice.value.toLowerCase().replaceAll(' ', '-')}`}><span>{choice.label}</span>{checked && <Check size={16} aria-hidden="true" />}</button>;
-                  })}
+    <div className="page-wrap py-8 sm:py-12">
+      <div className="mx-auto max-w-4xl">
+        <Link
+          href="/browse"
+          className="inline-flex items-center gap-2 text-base font-bold text-[#1769AA] hover:text-[#123E67] hover:underline"
+          data-testid="link-back-to-browse"
+        >
+          <ArrowLeft size={18} aria-hidden="true" />
+          Browse all schemes
+        </Link>
+
+        {!webhookResult ? (
+          <div className="mt-6 grid gap-6 lg:grid-cols-[0.78fr_1.22fr]">
+            <aside className="rounded-2xl bg-[#123E67] p-6 text-white sm:p-7 on-dark">
+              <span className="inline-block rounded-full bg-white/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-[#DCEFFA]">
+                Guided search
+              </span>
+              <h1 className="mt-4 text-3xl font-extrabold leading-tight">
+                Find schemes for me
+              </h1>
+              <p className="mt-3 text-base leading-relaxed text-[#DCEFFA]">
+                Answer a few simple questions. Your answers are sent through our transparent rule-checking workflow to find schemes that may fit.
+              </p>
+
+              <div className="mt-6 space-y-3 border-t border-white/15 pt-5 text-sm text-[#DCEFFA]">
+                <div className="flex items-start gap-2.5">
+                  <ShieldCheck size={18} className="mt-0.5 shrink-0 text-white" aria-hidden="true" />
+                  <p>
+                    <strong className="text-white">Private by design:</strong> We never ask for Aadhaar numbers, bank details, exact address, or documents.
+                  </p>
                 </div>
-              </fieldset>
-              {matchMutation.isError && <div className="mt-5 flex gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm" role="alert"><CircleAlert size={18} className="shrink-0 text-destructive" /><div><p className="font-bold">We couldn’t compare your answers.</p><p className="mt-1 text-muted-foreground">Your answers are still on this page. Please try again.</p></div></div>}
-              <div className="mt-7 flex items-center justify-between gap-3 border-t border-border pt-5">
-                <button type="button" disabled={step === 0 || matchMutation.isPending} onClick={() => setStep((current) => Math.max(0, current - 1))} className="min-h-11 rounded-full px-4 text-sm font-bold text-muted-foreground hover:bg-secondary disabled:opacity-40" data-testid="button-previous-question">Back</button>
-                <button type="button" disabled={!selected || matchMutation.isPending} onClick={next} className="inline-flex min-h-11 items-center gap-2 rounded-full bg-primary px-5 text-sm font-bold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" data-testid="button-next-question">{matchMutation.isPending ? 'Comparing criteria…' : step === questions.length - 1 ? 'Show possible matches' : 'Continue'}{!matchMutation.isPending && <ArrowRight size={16} />}</button>
+                <div className="flex items-start gap-2.5">
+                  <CheckCircle2 size={18} className="mt-0.5 shrink-0 text-white" aria-hidden="true" />
+                  <p>
+                    You can choose <strong className="text-white">Not sure</strong> or{' '}
+                    <strong className="text-white">Prefer not to say</strong> at any step.
+                  </p>
+                </div>
               </div>
-              <p className="mt-4 text-xs leading-5 text-muted-foreground">Every answer is required. “Not sure” and “Prefer not to say” are available where supported; choosing one may make matching less complete.</p>
-            </section>
+            </aside>
+
+            <div>
+              <QuestionStep
+                question={currentQuestion}
+                stepIndex={step}
+                totalSteps={activeQuestions.length}
+                selectedValue={selectedValue}
+                onSelect={handleSelect}
+                onBack={handleBack}
+                onNext={handleNext}
+                isSubmitting={isSubmitting}
+              />
+
+              {submitError && (
+                <div
+                  role="alert"
+                  className="mt-4 flex items-start gap-3 rounded-xl border border-red-300 bg-red-50 p-4 text-sm text-red-900"
+                >
+                  <CircleAlert size={19} className="mt-0.5 shrink-0" aria-hidden="true" />
+                  <div>
+                    <p className="font-bold">Could not check matching schemes</p>
+                    <p className="mt-1">{submitError}</p>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         ) : (
-          <section className="mt-8">
-            <div className="rounded-3xl bg-[hsl(var(--secondary))] p-6 sm:p-9">
-              <p className="eyebrow">Your comparison</p>
-              <h1 className="display-font mt-3 text-4xl tracking-[-.035em] sm:text-5xl">Possible next steps</h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-muted-foreground">These results compare your answers with the criteria currently available. They do not confirm eligibility, guarantee benefits, or submit an application.</p>
+          <section className="mt-6" aria-labelledby="match-results-heading">
+            <div className="rounded-2xl border border-[#1769AA]/25 bg-white p-6 shadow-xs sm:p-8">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-[#DCEFFA] px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-[#123E67]">
+                    <CheckCircle2 size={14} className="text-[#1769AA]" aria-hidden="true" />
+                    Best matches sorted first
+                  </span>
+                  <h1
+                    id="match-results-heading"
+                    className="mt-3 text-3xl font-extrabold text-[#123E67] sm:text-4xl"
+                  >
+                    Schemes that may fit your answers
+                  </h1>
+                  <p className="mt-2 max-w-2xl text-base text-[#203040]" aria-live="polite">
+                    Found <strong>{relevantMatches.length}</strong>{' '}
+                    {relevantMatches.length === 1 ? 'scheme' : 'schemes'} marked as{' '}
+                    <strong>Potential match</strong> or{' '}
+                    <strong>More information needed</strong>.
+                  </p>
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={handleEditAnswers}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#1769AA]/30 bg-[#F5F9FC] px-4 py-2 text-sm font-bold text-[#123E67] hover:bg-[#DCEFFA]"
+                    data-testid="button-change-answers"
+                  >
+                    Change answers
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRestart}
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#1769AA]/30 bg-white px-4 py-2 text-sm font-bold text-[#1769AA] hover:bg-[#DCEFFA]"
+                    data-testid="button-start-over"
+                  >
+                    <RotateCcw size={15} aria-hidden="true" />
+                    Start over
+                  </button>
+                </div>
+              </div>
+
+              {/* Transparent 8-step Webhook Flow trace */}
+              <div className="mt-5 border-t border-[#1769AA]/15 pt-4">
+                <button
+                  type="button"
+                  onClick={() => setShowPipelineTrace((prev) => !prev)}
+                  aria-expanded={showPipelineTrace}
+                  className="inline-flex items-center gap-2 text-sm font-bold text-[#1769AA] hover:text-[#123E67]"
+                >
+                  <Workflow size={16} aria-hidden="true" />
+                  <span>How these results were generated (8-step matching flow)</span>
+                  {showPipelineTrace ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                </button>
+
+                {showPipelineTrace && (
+                  <ol className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+                    {webhookResult.pipelineSteps.map((s) => (
+                      <li
+                        key={s.step}
+                        className="rounded-xl border border-[#1769AA]/20 bg-[#F5F9FC] p-3 text-xs"
+                      >
+                        <span className="font-extrabold text-[#1769AA]">
+                          {s.step}. {s.node}
+                        </span>
+                        <p className="mt-1 text-[#203040]">{s.detail}</p>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </div>
             </div>
-            <div className="mt-6 flex items-center justify-between gap-3"><p className="text-sm font-bold" aria-live="polite" data-testid="text-match-count">{results.length} {results.length === 1 ? 'scheme' : 'schemes'} returned</p><button type="button" onClick={restart} className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2.5 text-sm font-bold hover:bg-secondary" data-testid="button-start-over"><RotateCcw size={15} /> Start over</button></div>
-            {results.length > 0 ? <div className="mt-4 space-y-4">{results.map((match) => <MatchResult key={match.scheme.id} match={match} />)}</div> : <div className="mt-4 rounded-2xl border border-dashed border-border bg-card p-9 text-center"><p className="display-font text-2xl">No results were returned</p><p className="mt-2 text-sm leading-6 text-muted-foreground">This does not mean no support is available. Browse the directory or contact the relevant department for guidance.</p><Link href="/" className="mt-5 inline-flex rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground" data-testid="link-browse-after-empty">Browse schemes</Link></div>}
-             <div className="mt-6 flex gap-3 rounded-xl border border-border bg-card p-4 text-sm leading-6 text-muted-foreground"><CircleAlert className="mt-0.5 shrink-0 text-accent" size={18} /><p>Results are for discovery guidance only and do not confirm eligibility. Scheme rules can change. Check the official government source before applying.</p></div>
+
+            <div className="mt-5">
+              <OfficialSourceNotice />
+            </div>
+
+            {relevantMatches.length > 0 ? (
+              <div className="mt-6 space-y-5">
+                {relevantMatches.map((match) => (
+                  <MatchReason key={match.scheme.id} match={match} />
+                ))}
+              </div>
+            ) : (
+              <div className="mt-6 rounded-2xl border-2 border-dashed border-[#1769AA]/30 bg-white p-8 text-center">
+                <h2 className="text-xl font-extrabold text-[#123E67]">
+                  No close matches found for those exact answers
+                </h2>
+                <p className="mx-auto mt-2 max-w-lg text-base text-[#203040]">
+                  You can still explore the complete scheme catalogue or adjust your answers to see additional options.
+                </p>
+                <div className="mt-5 flex flex-wrap justify-center gap-3">
+                  <button
+                    type="button"
+                    onClick={handleEditAnswers}
+                    className="inline-flex min-h-11 items-center rounded-xl border border-[#1769AA] bg-white px-5 py-2.5 text-base font-bold text-[#1769AA] hover:bg-[#DCEFFA]"
+                  >
+                    Change answers
+                  </button>
+                  <Link
+                    href="/browse"
+                    className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#1769AA] px-5 py-2.5 text-base font-bold text-white hover:bg-[#123E67]"
+                    data-testid="link-browse-after-empty"
+                  >
+                    <LayoutGrid size={17} aria-hidden="true" />
+                    View complete scheme catalogue
+                  </Link>
+                </div>
+              </div>
+            )}
+
+            {otherMatches.length > 0 && (
+              <div className="mt-8 rounded-2xl border border-[#1769AA]/20 bg-white p-5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h2 className="text-lg font-extrabold text-[#123E67]">
+                      Other schemes in the catalogue ({otherMatches.length})
+                    </h2>
+                    <p className="text-sm text-[#203040]/80">
+                      These schemes did not appear to match your answers or belong to another category.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowNonMatches((prev) => !prev)}
+                      aria-expanded={showNonMatches}
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-xl border border-[#1769AA]/30 bg-[#F5F9FC] px-4 text-sm font-bold text-[#123E67] hover:bg-[#DCEFFA]"
+                    >
+                      {showNonMatches ? 'Hide' : 'Show'} other schemes
+                      {showNonMatches ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                    </button>
+                    <Link
+                      href="/browse"
+                      className="inline-flex min-h-10 items-center gap-1.5 rounded-xl bg-[#1769AA] px-4 text-sm font-bold text-white hover:bg-[#123E67]"
+                    >
+                      View complete catalogue
+                    </Link>
+                  </div>
+                </div>
+
+                {showNonMatches && (
+                  <div className="mt-5 space-y-4">
+                    {otherMatches.map((match) => (
+                      <MatchReason key={match.scheme.id} match={match} />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </section>
         )}
       </div>

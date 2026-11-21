@@ -5,8 +5,10 @@ import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import NotFound from '@/pages/not-found';
 import HomePage from './pages/HomePage';
+import BrowsePage from './pages/BrowsePage';
 import FindPage from './pages/FindPage';
 import SchemeDetailPage from './pages/SchemeDetailPage';
+import AboutPage from './pages/AboutPage';
 import { SiteShell } from './components/SiteShell';
 import {
   Route,
@@ -23,8 +25,10 @@ function Router() {
       <SiteShell>
         <Switch>
           <Route path="/" component={HomePage} />
+          <Route path="/browse" component={BrowsePage} />
           <Route path="/find" component={FindPage} />
           <Route path="/schemes/:id" component={SchemeDetailPage} />
+          <Route path="/about" component={AboutPage} />
           <Route component={NotFound} />
         </Switch>
       </SiteShell>

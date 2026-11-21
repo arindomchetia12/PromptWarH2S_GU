@@ -1,123 +1,403 @@
 import { useMemo, useState } from 'react';
-import { useGetSchemeSummary, useListSchemes, getListSchemesQueryKey, getGetSchemeSummaryQueryKey } from '@workspace/api-client-react';
-import type { ListSchemesParams } from '@workspace/api-client-react';
-import { ArrowDown, ArrowRight, BookOpenCheck, CircleAlert, Search, SlidersHorizontal } from 'lucide-react';
-import { Link } from 'wouter';
+import {
+  getGetSchemeSummaryQueryKey,
+  getListSchemesQueryKey,
+  useGetSchemeSummary,
+  useListSchemes,
+} from '@workspace/api-client-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  CircleAlert,
+  Compass,
+  ExternalLink,
+  LayoutGrid,
+  RefreshCw,
+  Search,
+} from 'lucide-react';
+import { Link, useLocation } from 'wouter';
+import { CategoryShortcuts } from '../components/CategoryShortcuts';
+import { DiscoveryChoiceCard } from '../components/DiscoveryChoiceCard';
+import { HeroSearch } from '../components/HeroSearch';
+import { OfficialSourceNotice } from '../components/OfficialSourceNotice';
 import { SchemeCard } from '../components/SchemeCard';
 
-const STATES = ['Andaman and Nicobar Islands', 'Andhra Pradesh', 'Arunachal Pradesh', 'Assam', 'Bihar', 'Chandigarh', 'Chhattisgarh', 'Delhi', 'Goa', 'Gujarat', 'Haryana', 'Himachal Pradesh', 'Jammu and Kashmir', 'Jharkhand', 'Karnataka', 'Kerala', 'Ladakh', 'Madhya Pradesh', 'Maharashtra', 'Manipur', 'Meghalaya', 'Mizoram', 'Nagaland', 'Odisha', 'Puducherry', 'Punjab', 'Rajasthan', 'Sikkim', 'Tamil Nadu', 'Telangana', 'Tripura', 'Uttar Pradesh', 'Uttarakhand', 'West Bengal'];
+const VISUAL_SPOTLIGHTS = [
+  {
+    title: 'Education & Scholarships',
+    subtitle: 'Pragyan Bharati Scooty, Fee Waiver & Ishan Uday',
+    image: '/images/assam-education.jpg',
+    alt: 'Cotton College in Guwahati, Assam representing Assam education schemes',
+    badge: '6 Schemes',
+    href: '/browse?category=Education',
+  },
+  {
+    title: 'PM-KISAN & Direct Support',
+    subtitle: '₹6,000/year DBT & ₹5,000 MMKSSY Farm Tools',
+    image: '/images/pm-kisan.jpg',
+    alt: 'PM Kisan Samman Nidhi government agricultural support programme',
+    badge: 'Agriculture',
+    href: '/browse?category=Agriculture',
+  },
+  {
+    title: 'Solar Irrigation (PM-KUSUM)',
+    subtitle: 'Up to 85% subsidy on stand-alone solar pumps',
+    image: '/images/solar-pump.jpg',
+    alt: 'Solar water pumping photovoltaic arrays for rural farms',
+    badge: '85% Subsidy',
+    href: '/schemes/12',
+  },
+  {
+    title: 'Assam Tea & Rural Credit',
+    subtitle: 'Kisan Credit Card (4% interest) & AFCSS subsidy',
+    image: '/images/assam-tea.jpg',
+    alt: 'Workers harvesting tea in an Assam tea plantation',
+    badge: 'Assam Focus',
+    href: '/schemes/11',
+  },
+];
+
+const HOW_IT_WORKS = [
+  {
+    step: '01',
+    icon: Search,
+    title: 'Search or answer a few questions',
+    description:
+      'Type what you need or use our 1-minute private questionnaire. We never ask for Aadhaar or bank details.',
+  },
+  {
+    step: '02',
+    icon: CheckCircle2,
+    title: 'See why schemes may fit you',
+    description:
+      'Transparent rule checks rank potential matches first and highlight which official criteria still need checking.',
+  },
+  {
+    step: '03',
+    icon: ExternalLink,
+    title: 'Apply on official government portals',
+    description:
+      'Review document checklists, application steps, and last-verified dates before continuing to the department website.',
+  },
+];
 
 export default function HomePage() {
-  const [query, setQuery] = useState('');
-  const [category, setCategory] = useState('');
-  const [state, setState] = useState('');
-  const [level, setLevel] = useState('');
-  const params = useMemo<ListSchemesParams>(() => ({
-    ...(query.trim() ? { q: query.trim() } : {}),
-    ...(category ? { category } : {}),
-    ...(state ? { state } : {}),
-    ...(level ? { governmentLevel: level as 'central' | 'state' } : {}),
-  }), [query, category, state, level]);
-  const list = useListSchemes(params, { query: { queryKey: getListSchemesQueryKey(params) } });
-  const summary = useGetSchemeSummary({ query: { queryKey: getGetSchemeSummaryQueryKey() } });
-  const schemes = list.data ?? [];
-  const clearFilters = () => { setQuery(''); setCategory(''); setState(''); setLevel(''); };
+  const [, setLocation] = useLocation();
+  const [selectedCategory, setSelectedCategory] = useState('');
+
+  const summary = useGetSchemeSummary({
+    query: { queryKey: getGetSchemeSummaryQueryKey() },
+  });
+
+  const allSchemesQuery = useListSchemes(undefined, {
+    query: { queryKey: getListSchemesQueryKey(undefined) },
+  });
+
+  const allSchemes = allSchemesQuery.data ?? [];
+
+  const categoryCounts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const s of allSchemes) {
+      map[s.category] = (map[s.category] ?? 0) + 1;
+    }
+    return map;
+  }, [allSchemes]);
+
+  const categoriesWithRecords = useMemo(() => {
+    const fromSummary = summary.data?.categories ?? [];
+    if (fromSummary.length > 0) return fromSummary;
+    return Object.keys(categoryCounts).sort();
+  }, [summary.data?.categories, categoryCounts]);
+
+  const featuredSchemes = useMemo(() => {
+    const filtered = selectedCategory
+      ? allSchemes.filter((s) => s.category.toLowerCase() === selectedCategory.toLowerCase())
+      : allSchemes;
+    return filtered.slice(0, 6);
+  }, [allSchemes, selectedCategory]);
+
+  const handleHeroSearch = (query: string) => {
+    const params = new URLSearchParams();
+    if (query) params.set('q', query);
+    setLocation(params.toString() ? `/browse?${params.toString()}` : '/browse');
+  };
 
   return (
     <>
-      <section className="relative overflow-hidden bg-[hsl(var(--secondary))]">
-        <div className="paper-grid pointer-events-none absolute inset-0 opacity-60" />
-        <div className="page-wrap relative grid gap-10 py-14 sm:py-20 lg:grid-cols-[1.15fr_.85fr] lg:items-center lg:py-24">
-          <div className="reveal">
-            <p className="eyebrow mb-5">Government schemes, less complicated</p>
-            <h1 className="display-font max-w-[720px] text-[clamp(3rem,7vw,5.7rem)] leading-[.98] tracking-[-.055em]">
-              Find the support<br /><span className="text-primary">meant for you.</span>
-            </h1>
-            <p className="mt-6 max-w-xl text-base leading-7 text-muted-foreground sm:text-lg">
-              Browse public schemes by need, location or government level. Understand what the published criteria say before you take the next step.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <Link href="/find" className="inline-flex min-h-12 items-center gap-3 rounded-full bg-primary px-6 text-sm font-bold text-primary-foreground transition-transform hover:translate-y-[-2px]" data-testid="link-start-questionnaire">
-                Check possible matches <ArrowRight size={17} />
+      <HeroSearch totalSchemes={allSchemes.length} onSearch={handleHeroSearch} />
+
+      <div className="page-wrap py-8 sm:py-10">
+        {/* Two main discovery choices */}
+        <section aria-label="Choose how to discover schemes">
+          <div className="grid gap-5 md:grid-cols-2">
+            <DiscoveryChoiceCard
+              eyebrow="Don't know where to start?"
+              title="Find schemes for me"
+              description="Answer a few questions about your needs to see schemes that may be relevant."
+              buttonLabel="Start guided search"
+              href="/find"
+              icon={Compass}
+              primary
+              testId="link-start-questionnaire"
+            />
+            <DiscoveryChoiceCard
+              eyebrow="Full Assam directory"
+              title="Browse all schemes"
+              description="Explore the scheme catalogue by category, location, or keyword."
+              buttonLabel="Browse schemes"
+              href="/browse"
+              icon={LayoutGrid}
+              testId="link-browse-catalogue"
+            />
+          </div>
+        </section>
+
+        {/* Visual Spotlight Gallery of Assam & Central Government Schemes */}
+        <section aria-labelledby="spotlight-heading" className="mt-10 py-4">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <span className="text-xs font-extrabold uppercase tracking-wider text-[#1769AA]">
+                Key Assam &amp; Central Programmes
+              </span>
+              <h2
+                id="spotlight-heading"
+                className="mt-1 text-2xl font-extrabold text-[#123E67] sm:text-3xl"
+              >
+                Government initiatives across Assam
+              </h2>
+            </div>
+            <Link
+              href="/browse"
+              className="inline-flex items-center gap-1.5 text-sm font-bold text-[#1769AA] hover:text-[#123E67] hover:underline"
+            >
+              Explore full directory
+              <ArrowRight size={16} aria-hidden="true" />
+            </Link>
+          </div>
+
+          <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {VISUAL_SPOTLIGHTS.map((item) => (
+              <Link
+                key={item.title}
+                href={item.href}
+                className="group relative flex h-60 flex-col justify-end overflow-hidden rounded-2xl border border-[#1769AA]/20 bg-[#123E67] shadow-xs transition-all hover:-translate-y-0.5 hover:shadow-md"
+              >
+                <img
+                  src={item.image}
+                  alt={item.alt}
+                  loading="lazy"
+                  className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#123E67]/95 via-[#123E67]/50 to-transparent" />
+                <span className="absolute left-3.5 top-3.5 rounded-full bg-white/95 px-3 py-1 text-xs font-extrabold text-[#123E67] shadow-xs">
+                  {item.badge}
+                </span>
+                <div className="relative p-4 text-white">
+                  <h3 className="text-lg font-extrabold leading-snug">{item.title}</h3>
+                  <p className="mt-1 text-xs font-medium leading-relaxed text-[#DCEFFA]">
+                    {item.subtitle}
+                  </p>
+                </div>
               </Link>
-              <a href="#browse" className="inline-flex min-h-12 items-center gap-2 rounded-full border border-border bg-background/70 px-5 text-sm font-bold hover:bg-background" data-testid="link-browse-catalogue">
-                Browse the catalogue <ArrowDown size={16} />
-              </a>
+            ))}
+          </div>
+        </section>
+
+        {/* Explore by category (only categories with records) */}
+        <div className="mt-6">
+          <CategoryShortcuts
+            categories={categoriesWithRecords}
+            counts={categoryCounts}
+            selectedCategory={selectedCategory}
+            onSelectCategory={setSelectedCategory}
+          />
+        </div>
+
+        {/* Schemes to explore */}
+        <section aria-labelledby="schemes-to-explore-heading" className="py-6">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2
+                id="schemes-to-explore-heading"
+                className="text-2xl font-extrabold text-[#123E67] sm:text-3xl"
+              >
+                {selectedCategory ? `${selectedCategory} schemes` : 'Schemes to explore'}
+              </h2>
+              <p className="mt-1 text-base text-[#203040]/80">
+                {allSchemesQuery.isLoading
+                  ? 'Loading verified scheme records…'
+                  : `Showing ${featuredSchemes.length} of ${
+                      selectedCategory
+                        ? categoryCounts[selectedCategory] ?? featuredSchemes.length
+                        : allSchemes.length
+                    } active schemes in the Suvidha catalogue.`}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-4">
+              {selectedCategory && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory('')}
+                  className="text-sm font-bold text-[#1769AA] underline underline-offset-4 hover:text-[#123E67]"
+                >
+                  Show all categories
+                </button>
+              )}
+              <Link
+                href={
+                  selectedCategory
+                    ? `/browse?category=${encodeURIComponent(selectedCategory)}`
+                    : '/browse'
+                }
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-[#1769AA]/30 bg-white px-4 py-2 text-base font-bold text-[#1769AA] hover:bg-[#DCEFFA] hover:text-[#123E67]"
+                data-testid="link-view-all-schemes"
+              >
+                View all schemes
+                <ArrowRight size={18} aria-hidden="true" />
+              </Link>
             </div>
           </div>
-          <div className="reveal-delay relative mx-auto w-full max-w-[430px] lg:ml-auto">
-            <div className="absolute -right-2 top-6 h-[80%] w-[88%] rotate-3 rounded-[2rem] border border-primary/20 bg-[hsl(var(--accent))]/20" />
-            <div className="relative rounded-[2rem] border border-border bg-card p-6 shadow-xl sm:p-8">
-              <div className="mb-8 flex items-center justify-between">
-                <span className="eyebrow">A practical guide</span>
-                <span className="rounded-full bg-secondary px-3 py-1 text-[10px] font-bold uppercase tracking-wider">India</span>
+
+          <div className="mt-6">
+            {allSchemesQuery.isLoading ? (
+              <div
+                className="grid gap-5 md:grid-cols-2 lg:grid-cols-3"
+                aria-label="Loading schemes"
+              >
+                {[0, 1, 2, 3, 4, 5].map((i) => (
+                  <div
+                    key={i}
+                    className="h-80 animate-pulse rounded-2xl border border-[#1769AA]/15 bg-white"
+                  >
+                    <div className="h-40 w-full rounded-t-2xl bg-[#DCEFFA]" />
+                    <div className="p-6">
+                      <div className="h-6 w-4/5 rounded bg-[#DCEFFA]" />
+                      <div className="mt-3 h-4 w-full rounded bg-[#F5F9FC]" />
+                      <div className="mt-2 h-4 w-3/4 rounded bg-[#F5F9FC]" />
+                    </div>
+                  </div>
+                ))}
               </div>
-              <div className="space-y-4">
-                <div className="flex gap-4 rounded-2xl bg-secondary/70 p-4">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background text-primary"><Search size={19} /></span>
-                  <div><p className="text-sm font-bold">Start with your need</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Education, livelihood, health and more.</p></div>
-                </div>
-                <div className="flex gap-4 rounded-2xl bg-secondary/70 p-4">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-background text-primary"><BookOpenCheck size={19} /></span>
-                  <div><p className="text-sm font-bold">See criteria in plain language</p><p className="mt-1 text-xs leading-5 text-muted-foreground">Know what matches—and what still needs checking.</p></div>
-                </div>
+            ) : allSchemesQuery.isError ? (
+              <div className="rounded-2xl border border-[#1769AA]/25 bg-white p-8 text-center">
+                <CircleAlert
+                  size={32}
+                  className="mx-auto text-[#1769AA]"
+                  aria-hidden="true"
+                />
+                <h3 className="mt-3 text-xl font-extrabold text-[#123E67]">
+                  Unable to load schemes right now
+                </h3>
+                <p className="mt-2 text-base text-[#203040]">
+                  Please check that the database service is running and try again.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => allSchemesQuery.refetch()}
+                  className="mt-5 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[#1769AA] px-5 py-2.5 text-base font-bold text-white hover:bg-[#123E67]"
+                  data-testid="button-retry-schemes"
+                >
+                  <RefreshCw size={17} aria-hidden="true" />
+                  Try again
+                </button>
               </div>
-              <div className="mt-6 border-t border-border pt-5 text-xs leading-5 text-muted-foreground">
-                A possible match is a starting point, not a guarantee of eligibility or approval.
+            ) : (
+              <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3">
+                {featuredSchemes.map((scheme) => (
+                  <SchemeCard key={scheme.id} scheme={scheme} />
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* How Suvidha Works + Community Photo Banner */}
+        <section
+          aria-labelledby="how-suvidha-works-heading"
+          className="mt-8 overflow-hidden rounded-3xl border border-[#1769AA]/20 bg-white shadow-xs"
+        >
+          <div className="grid lg:grid-cols-[1.25fr_0.75fr]">
+            <div className="p-6 sm:p-9">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-[#1769AA]">
+                Simple, transparent process
+              </span>
+              <h2
+                id="how-suvidha-works-heading"
+                className="mt-1.5 text-2xl font-extrabold text-[#123E67] sm:text-3xl"
+              >
+                How Suvidha helps citizens in Assam
+              </h2>
+
+              <div className="mt-6 grid gap-5 sm:grid-cols-3">
+                {HOW_IT_WORKS.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <div
+                      key={item.step}
+                      className="rounded-2xl border border-[#1769AA]/15 bg-[#F5F9FC] p-4"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#DCEFFA] text-[#1769AA]">
+                          <Icon size={20} aria-hidden="true" />
+                        </span>
+                        <span className="text-xs font-extrabold text-[#1769AA]/70">
+                          STEP {item.step}
+                        </span>
+                      </div>
+                      <h3 className="mt-3 text-base font-extrabold text-[#123E67]">
+                        {item.title}
+                      </h3>
+                      <p className="mt-1.5 text-sm leading-relaxed text-[#203040]">
+                        {item.description}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                <Link
+                  href="/find"
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-[#1769AA] px-6 py-2.5 text-base font-bold text-white hover:bg-[#123E67]"
+                >
+                  Start guided matching
+                  <ArrowRight size={18} aria-hidden="true" />
+                </Link>
+                <Link
+                  href="/about"
+                  className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-[#1769AA]/30 bg-white px-5 py-2.5 text-base font-bold text-[#123E67] hover:bg-[#DCEFFA]"
+                >
+                  See official source audit
+                </Link>
+              </div>
+            </div>
+
+            <div className="relative min-h-[260px] bg-[#123E67]">
+              <img
+                src="/images/women-shg.jpg"
+                alt="Rural women community empowerment in India"
+                loading="lazy"
+                className="h-full w-full object-cover"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#123E67]/90 via-[#123E67]/30 to-transparent" />
+              <div className="absolute inset-x-0 bottom-0 p-6 text-white">
+                <p className="text-xs font-extrabold uppercase tracking-wider text-[#DCEFFA]">
+                  Built for Every Citizen
+                </p>
+                <p className="mt-1 text-lg font-extrabold leading-snug">
+                  Accessible, plain-language scheme guidance for students, farmers, and families across Assam.
+                </p>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <section className="page-wrap -mt-1 py-8" aria-label="Catalogue overview">
-        <div className="grid grid-cols-2 gap-3 rounded-2xl border border-border bg-card p-4 sm:grid-cols-4 sm:p-5">
-          <div className="px-2 py-2"><p className="display-font text-3xl">{summary.isLoading ? '—' : summary.data?.activeCount ?? '—'}</p><p className="mt-1 text-xs text-muted-foreground">Active schemes listed</p></div>
-          <div className="border-l border-border px-4 py-2"><p className="display-font text-3xl">{summary.isLoading ? '—' : summary.data?.categoryCount ?? '—'}</p><p className="mt-1 text-xs text-muted-foreground">Areas of support</p></div>
-          <div className="border-l border-border px-4 py-2"><p className="display-font text-3xl">{summary.isLoading ? '—' : summary.data?.centralCount ?? '—'}</p><p className="mt-1 text-xs text-muted-foreground">Central schemes</p></div>
-          <div className="border-l border-border px-4 py-2"><p className="display-font text-3xl">{summary.isLoading ? '—' : summary.data?.stateCount ?? '—'}</p><p className="mt-1 text-xs text-muted-foreground">State schemes</p></div>
+        {/* Trust and guidance note */}
+        <div className="mt-8">
+          <OfficialSourceNotice showAboutLink />
         </div>
-        {summary.isError && <p className="mt-3 text-xs text-muted-foreground" role="status">Catalogue overview is temporarily unavailable; scheme browsing may still work.</p>}
-      </section>
-
-      <section id="browse" className="page-wrap scroll-mt-6 pb-10 pt-9">
-        <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-          <div>
-            <p className="eyebrow mb-3">Explore the directory</p>
-            <h2 className="display-font text-4xl tracking-[-.035em] sm:text-5xl">Browse schemes</h2>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-muted-foreground">Search the active directory. Use the official information link on each scheme to confirm current requirements.</p>
-          </div>
-          <Link href="/find" className="inline-flex w-fit items-center gap-2 text-sm font-bold text-primary hover:underline" data-testid="link-questionnaire-from-browse">Not sure where to start? Check your matches <ArrowRight size={15} /></Link>
-        </div>
-        <div className="mb-7 rounded-2xl border border-border bg-card p-4 sm:p-5">
-          <div className="mb-4 flex items-center gap-2 text-xs font-bold uppercase tracking-[.12em] text-muted-foreground"><SlidersHorizontal size={15} /> Refine your search</div>
-          <div className="grid gap-3 md:grid-cols-[1.5fr_1fr_1fr_1fr_auto]">
-            <label className="relative block">
-              <span className="sr-only">Search by keyword</span>
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted-foreground" size={17} aria-hidden="true" />
-              <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search a scheme or need" className="h-12 w-full rounded-xl border border-input bg-background pl-11 pr-3 text-sm outline-none transition focus:border-primary" data-testid="input-search-schemes" />
-            </label>
-            <label><span className="sr-only">Filter by category</span><select value={category} onChange={(event) => setCategory(event.target.value)} className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none focus:border-primary" data-testid="select-category"><option value="">All categories</option>{(summary.data?.categories ?? []).map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <label><span className="sr-only">Filter by state or union territory</span><select value={state} onChange={(event) => setState(event.target.value)} className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none focus:border-primary" data-testid="select-state"><option value="">All states & UTs</option>{STATES.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-            <label><span className="sr-only">Filter by government level</span><select value={level} onChange={(event) => setLevel(event.target.value)} className="h-12 w-full rounded-xl border border-input bg-background px-3 text-sm text-foreground outline-none focus:border-primary" data-testid="select-government-level"><option value="">All government levels</option><option value="central">Central</option><option value="state">State</option></select></label>
-            <button type="button" onClick={clearFilters} className="h-12 rounded-xl px-4 text-sm font-bold text-muted-foreground hover:bg-secondary hover:text-foreground" data-testid="button-clear-filters">Clear</button>
-          </div>
-        </div>
-        <div className="mb-4 flex items-center justify-between">
-          <p className="text-sm font-semibold" aria-live="polite" data-testid="text-scheme-count">{list.isLoading ? 'Loading schemes…' : list.isError ? 'Schemes unavailable' : `${schemes.length} ${schemes.length === 1 ? 'scheme' : 'schemes'} found`}</p>
-          {Object.values(params).some(Boolean) && <span className="text-xs text-muted-foreground">Filters applied</span>}
-        </div>
-        {list.isLoading ? <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" aria-label="Loading scheme results">{[0, 1, 2, 3, 4, 5].map((item) => <div key={item} className="h-64 animate-pulse rounded-2xl border border-border bg-card p-6"><div className="h-5 w-24 rounded bg-muted" /><div className="mt-6 h-8 w-4/5 rounded bg-muted" /><div className="mt-4 h-4 w-full rounded bg-muted" /><div className="mt-2 h-4 w-3/4 rounded bg-muted" /></div>)}</div>
-          : list.isError ? <div className="rounded-2xl border border-border bg-card px-6 py-12 text-center"><CircleAlert className="mx-auto text-accent" size={28} /><h3 className="mt-4 font-bold">We couldn’t load the scheme directory</h3><p className="mt-2 text-sm text-muted-foreground">Please check your connection and try again.</p><button onClick={() => list.refetch()} className="mt-5 rounded-full bg-primary px-5 py-2.5 text-sm font-bold text-primary-foreground" data-testid="button-retry-schemes">Try again</button></div>
-          : schemes.length === 0 ? <div className="rounded-2xl border border-dashed border-border bg-card px-6 py-14 text-center"><Search className="mx-auto text-muted-foreground" size={27} /><h3 className="mt-4 display-font text-2xl">No schemes found</h3><p className="mx-auto mt-2 max-w-md text-sm leading-6 text-muted-foreground">Try a broader keyword or clear one or more filters. The directory shows only records currently available from the service.</p><button onClick={clearFilters} className="mt-5 text-sm font-bold text-primary underline underline-offset-4" data-testid="button-reset-search">Clear all filters</button></div>
-          : <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">{schemes.map((scheme) => <SchemeCard key={scheme.id} scheme={scheme} />)}</div>}
-      </section>
-      <section className="page-wrap py-8">
-        <div className="flex flex-col justify-between gap-5 rounded-3xl bg-primary px-6 py-8 text-primary-foreground sm:flex-row sm:items-center sm:px-9 sm:py-10">
-          <div><p className="text-xs font-bold uppercase tracking-[.14em] opacity-75">A little more guidance</p><h2 className="display-font mt-2 text-3xl sm:text-4xl">Compare your answers with the criteria.</h2><p className="mt-2 max-w-xl text-sm leading-6 opacity-80">A short, private questionnaire can help you decide what to explore next.</p></div>
-          <Link href="/find" className="inline-flex h-12 shrink-0 items-center justify-center gap-2 rounded-full bg-background px-5 text-sm font-bold text-foreground hover:bg-secondary" data-testid="link-find-support-cta">Start the check <ArrowRight size={16} /></Link>
-        </div>
-      </section>
+      </div>
     </>
   );
 }

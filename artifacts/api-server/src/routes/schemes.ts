@@ -24,10 +24,22 @@ import {
   type Scheme,
 } from "@workspace/api-zod";
 import { db, schemesTable } from "@workspace/db";
-import { compareSchemeCriteria } from "../lib/scheme-matching";
+import {
+  cleanAndOrganizeAnswers,
+  compareSchemeCriteria,
+  formatMatchExplanation,
+  sortSchemeMatches,
+} from "../lib/scheme-matching";
+import { getAllSchemes } from "../lib/schemes-db";
+import {
+  getLatestSyncReport,
+  runScheduledSchemeSync,
+  startSchemeSyncScheduler,
+} from "../lib/scheme-sync";
 
 const router: IRouter = Router();
 const REVIEW_AFTER_DAYS = 365;
+startSchemeSyncScheduler();
 
 function requireAdmin(
   req: Parameters<Parameters<IRouter["get"]>[1]>[0],
@@ -72,23 +84,19 @@ router.get("/schemes", async (req, res): Promise<void> => {
     return;
   }
 
-  const filters = [];
+  const allSchemes = await getAllSchemes();
+  let rows = allSchemes;
   if (!parsed.data.includeInactive) {
-    filters.push(eq(schemesTable.active, true));
+    rows = rows.filter((s) => s.active);
   } else if (!requireAdmin(req, res)) {
     return;
   }
   if (parsed.data.category) {
-    filters.push(eq(schemesTable.category, parsed.data.category));
+    rows = rows.filter((s) => s.category.toLowerCase() === parsed.data.category!.toLowerCase());
   }
   if (parsed.data.governmentLevel) {
-    filters.push(eq(schemesTable.governmentLevel, parsed.data.governmentLevel));
+    rows = rows.filter((s) => s.governmentLevel === parsed.data.governmentLevel);
   }
-  const rows = await db
-    .select()
-    .from(schemesTable)
-    .where(filters.length ? and(...filters) : undefined)
-    .orderBy(asc(schemesTable.category), asc(schemesTable.name));
 
   const state = parsed.data.state?.trim().toLowerCase();
   const query = parsed.data.q?.trim().toLowerCase();
@@ -114,13 +122,8 @@ router.get("/schemes", async (req, res): Promise<void> => {
 });
 
 router.get("/schemes/summary", async (_req, res): Promise<void> => {
-  const rows = await db
-    .select({
-      category: schemesTable.category,
-      governmentLevel: schemesTable.governmentLevel,
-    })
-    .from(schemesTable)
-    .where(eq(schemesTable.active, true));
+  const allSchemes = await getAllSchemes();
+  const rows = allSchemes.filter((s) => s.active);
 
   const categories = [...new Set(rows.map((scheme) => scheme.category))].sort();
   res.json(
@@ -135,28 +138,87 @@ router.get("/schemes/summary", async (_req, res): Promise<void> => {
 });
 
 router.post("/schemes/match", async (req, res): Promise<void> => {
+  // 1. Webhook — receive answers from website form
   const parsed = MatchSchemesBody.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: parsed.error.message });
     return;
   }
 
-  const schemes = await db
-    .select()
-    .from(schemesTable)
-    .where(eq(schemesTable.active, true))
-    .orderBy(asc(schemesTable.name));
+  // 2. Edit Fields — clean and organize answers
+  const cleanedAnswers = cleanAndOrganizeAnswers(parsed.data as ProfileAnswers);
 
-  const matches = schemes.map((scheme) => ({
+  // 3. Database — get current scheme information
+  const allSchemes = await getAllSchemes();
+  const schemes = allSchemes.filter((s) => s.active);
+
+  // 4. Code / If — check eligibility rules
+  const rawMatches = schemes.map((scheme) => ({
     scheme,
     ...compareSchemeCriteria(
-      parsed.data as ProfileAnswers,
+      cleanedAnswers,
       scheme.criteria as Scheme["criteria"],
       scheme.regions,
     ),
   }));
 
-  res.json(MatchSchemesResponse.parse(matches));
+  // 5. Sort — put the best matches first
+  const sortedMatches = sortSchemeMatches(rawMatches);
+
+  // 6. Format & Respond to Webhook — send results to the website
+  res.json(MatchSchemesResponse.parse(sortedMatches));
+});
+
+router.post("/webhook/match", async (req, res): Promise<void> => {
+  const parsed = MatchSchemesBody.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.message });
+    return;
+  }
+
+  const cleanedAnswers = cleanAndOrganizeAnswers(parsed.data as ProfileAnswers);
+  const allSchemes = await getAllSchemes();
+  const schemes = allSchemes.filter((s) => s.active);
+
+  const rawMatches = schemes.map((scheme) => ({
+    scheme,
+    ...compareSchemeCriteria(
+      cleanedAnswers,
+      scheme.criteria as Scheme["criteria"],
+      scheme.regions,
+    ),
+  }));
+
+  const sortedMatches = sortSchemeMatches(rawMatches);
+  const formattedResults = sortedMatches.map((m) => ({
+    ...m,
+    formatted: formatMatchExplanation(m),
+  }));
+
+  res.json({
+    cleanedAnswers,
+    pipelineSteps: [
+      { step: 1, node: "Website form", detail: "Submitted guided profile answers" },
+      { step: 2, node: "Webhook", detail: "Received answers at /api/webhook/match" },
+      { step: 3, node: "Edit Fields", detail: `Cleaned & normalized answers (${cleanedAnswers.state}, ${cleanedAnswers.ageBand})` },
+      { step: 4, node: "Database", detail: `Loaded ${schemes.length} active schemes from Supabase` },
+      { step: 5, node: "Code / If", detail: `Evaluated deterministic eligibility rules across ${schemes.length} schemes` },
+      { step: 6, node: "Sort", detail: `Ordered best matches first (${sortedMatches.filter((m) => m.status === "potential_match").length} potential, ${sortedMatches.filter((m) => m.status === "more_information_needed").length} need info)` },
+      { step: 7, node: "Format", detail: "Generated plain-language explanations and application steps" },
+      { step: 8, node: "Respond to Webhook", detail: "Sent sorted results back to website" },
+    ],
+    matches: formattedResults,
+  });
+});
+
+router.get("/schemes/sync-status", async (_req, res): Promise<void> => {
+  const report = await getLatestSyncReport();
+  res.json(report);
+});
+
+router.post("/schemes/sync-check", async (_req, res): Promise<void> => {
+  const report = await runScheduledSchemeSync("manual");
+  res.json(report);
 });
 
 router.get("/schemes/:id", async (req, res): Promise<void> => {
@@ -166,11 +228,8 @@ router.get("/schemes/:id", async (req, res): Promise<void> => {
     return;
   }
 
-  const [scheme] = await db
-    .select()
-    .from(schemesTable)
-    .where(and(eq(schemesTable.id, parsed.data.id), eq(schemesTable.active, true)))
-    .limit(1);
+  const allSchemes = await getAllSchemes();
+  const scheme = allSchemes.find((s) => s.id === parsed.data.id && s.active);
   if (!scheme) {
     res.status(404).json({ error: "Scheme not found." });
     return;

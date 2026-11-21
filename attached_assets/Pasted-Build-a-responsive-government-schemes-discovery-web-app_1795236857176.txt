@@ -1,0 +1,96 @@
+Build a responsive government schemes discovery web app for Indian citizens. The app should help people find government schemes that may be relevant to them and understand how to check eligibility and apply.
+
+Use:
+- React for the frontend
+- Node.js with Express.js for the backend
+- Supabase PostgreSQL for the database
+
+Build a working MVP with a small, clearly labelled demo catalogue of schemes. Do not present sample scheme details as verified current facts. Store a source URL and last-verified date for every scheme, and make it easy for an administrator to review and update scheme information.
+
+### User experience
+
+The homepage must offer two clear ways to discover schemes:
+1. Search and browse schemes by keyword, category, state, or government level.
+2. “Find schemes for me” guided questionnaire.
+
+The questionnaire should ask only for details needed to compare against scheme criteria, such as state, age range, rural/urban residence, student or employment status, and other relevant eligibility categories. Explain why each detail is requested. Do not ask for Aadhaar number, bank details, exact address, or other unnecessary sensitive data.
+
+Users should be able to:
+- Search by scheme name or need, such as “scholarship,” “housing,” or “farmer support.”
+- Filter schemes by state/region, category, and central or state government.
+- Complete a guided profile questionnaire to find potentially relevant schemes.
+- View results with a plain-language explanation of why each scheme may match.
+- See “More information needed” when their answers do not confirm all criteria.
+- Open a scheme detail page with benefits, eligibility, required documents, application steps, official source link, and last-verified date.
+- Follow the official government link to apply.
+
+Do not make any questionnaire question skippable. Require an answer before continuing, but provide sensible options such as “Not sure” or “Prefer not to say” where appropriate. If a user chooses one of these options, explain that matching may be less complete and show relevant schemes with criteria they still need to check.
+
+### Matching and safety
+
+Implement transparent, rule-based matching from the criteria stored for each scheme. Do not use AI to invent eligibility criteria or guarantee eligibility.
+
+Label results as:
+- “Potential match”
+- “More information needed”
+- “Doesn’t appear to match”
+
+For each result, show which answers matched and which criteria the user should verify. Let users browse all schemes even after seeing personalized results.
+
+Display this notice on results and scheme detail pages:
+“Results are for discovery guidance only and do not confirm eligibility. Scheme rules can change. Check the official government source before applying.”
+
+The app must not collect application data or claim to submit applications. Applications happen on official government websites.
+
+### Scheme data
+
+Create a consistent scheme record containing:
+- Name and category
+- Government level and applicable state/region
+- Intended beneficiaries
+- Benefits
+- Eligibility criteria in structured fields where possible
+- Required documents
+- Application steps
+- Official information URL
+- Official application URL
+- Last-verified date
+- Active/inactive status
+
+Use only official sources when entering scheme details, such as myScheme, India.gov.in, the relevant ministry or state department, and applicable government data portals. For demo content, clearly mark records as sample data and do not fabricate current eligibility facts. Store source URLs and verification dates. Do not scrape a government site unless its terms and data access permit it.
+
+### Admin data management
+
+Provide a simple protected admin interface or seed-data workflow to add, edit, deactivate, and review scheme records. Highlight records that have not been verified recently. Never silently change scheme criteria.
+
+### Accessibility and design
+
+- Use plain language, responsive mobile-first layouts, readable text, high contrast, and large touch targets.
+- Support keyboard navigation, visible focus, semantic HTML, and labelled form fields.
+- Do not rely on color alone for match status.
+- Make questionnaire progress clear and provide helpful validation.
+- Keep profile answers temporary unless the user explicitly chooses to save them.
+- Do not require account creation for the MVP.
+
+### Backend and database
+
+Create Express API routes for:
+- Listing and searching schemes
+- Filtering schemes
+- Fetching scheme details
+- Submitting questionnaire answers for matching
+- Admin-only scheme creation, editing, deactivation, and verification updates
+
+Use Supabase PostgreSQL. Add a schema and seed script for the demo catalogue. Validate all inputs, protect admin routes, and keep secrets in Replit Secrets. Never expose Supabase service-role credentials in frontend code.
+
+### Deliverables
+
+Build the complete working app, not just mockups. Include:
+- React frontend
+- Express backend
+- Supabase schema/migrations and sample seed data
+- `.env.example` with variable names only
+- README with Replit setup and run instructions
+- Clear explanation of demo-data limitations and how scheme records should be verified and maintained
+
+Before finishing, ensure the main flow works: user searches or completes the required questionnaire, sees understandable potential matches, opens a scheme’s details, and can follow its official link.
