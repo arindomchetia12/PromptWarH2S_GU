@@ -3,13 +3,17 @@ info:
   # Do not change the title, if the title changes, the import paths will be broken
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Government schemes discovery API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
     description: Health operations
+  - name: schemes
+    description: Search, browse, and match scheme records
+  - name: admin
+    description: Protected scheme catalogue management
 paths:
   /healthz:
     get:
@@ -24,13 +28,316 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /schemes:
+    get:
+      operationId: listSchemes
+      tags: [schemes]
+      summary: Search and filter active schemes
+      parameters:
+        - in: query
+          name: q
+          schema: { type: string, maxLength: 120 }
+        - in: query
+          name: category
+          schema: { type: string, maxLength: 80 }
+        - in: query
+          name: state
+          schema: { type: string, maxLength: 80 }
+        - in: query
+          name: governmentLevel
+          schema: { type: string, enum: [central, state] }
+        - in: query
+          name: includeInactive
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Matching scheme records
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scheme" }
+  /schemes/summary:
+    get:
+      operationId: getSchemeSummary
+      tags: [schemes]
+      summary: Get catalogue counts and categories
+      responses:
+        "200":
+          description: Catalogue summary
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SchemeSummary" }
+  /schemes/match:
+    post:
+      operationId: matchSchemes
+      tags: [schemes]
+      summary: Compare profile answers with published criteria
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/ProfileAnswers" }
+      responses:
+        "200":
+          description: Schemes with transparent match explanations
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/SchemeMatch" }
+        "400":
+          description: Invalid profile answers
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+  /schemes/{id}:
+    get:
+      operationId: getScheme
+      tags: [schemes]
+      summary: Get a scheme detail record
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Scheme detail
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scheme" }
+        "404":
+          description: Scheme not found
+  /admin/schemes:
+    get:
+      operationId: listAdminSchemes
+      tags: [admin]
+      summary: List all records for administrator review
+      parameters:
+        - in: query
+          name: needsReview
+          schema: { type: boolean, default: false }
+      responses:
+        "200":
+          description: Scheme records, including inactive ones
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Scheme" }
+        "401":
+          description: Administrator access required
+    post:
+      operationId: createScheme
+      tags: [admin]
+      summary: Add a scheme record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SchemeInput" }
+      responses:
+        "201":
+          description: Created scheme
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scheme" }
+        "400":
+          description: Invalid scheme record
+        "401":
+          description: Administrator access required
+  /admin/schemes/{id}:
+    patch:
+      operationId: updateScheme
+      tags: [admin]
+      summary: Update a scheme record
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/SchemeUpdate" }
+      responses:
+        "200":
+          description: Updated scheme
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scheme" }
+        "401":
+          description: Administrator access required
+        "404":
+          description: Scheme not found
+  /admin/schemes/{id}/deactivate:
+    post:
+      operationId: deactivateScheme
+      tags: [admin]
+      summary: Mark a scheme inactive
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Deactivated scheme
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scheme" }
+        "401":
+          description: Administrator access required
+        "404":
+          description: Scheme not found
+  /admin/schemes/{id}/verify:
+    post:
+      operationId: verifyScheme
+      tags: [admin]
+      summary: Record a scheme verification date
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: integer, minimum: 1 }
+      responses:
+        "200":
+          description: Scheme with updated verification date
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Scheme" }
+        "401":
+          description: Administrator access required
+        "404":
+          description: Scheme not found
 components:
   schemas:
     HealthStatus:
       type: object
       properties:
-        status:
-          type: string
-      required:
-        - status
+        status: { type: string }
+      required: [status]
+    SchemeCriteria:
+      type: object
+      properties:
+        minAge: { type: ["integer", "null"], minimum: 0 }
+        maxAge: { type: ["integer", "null"], minimum: 0 }
+        states:
+          type: array
+          items: { type: string }
+        residences:
+          type: array
+          items: { type: string, enum: [rural, urban] }
+        studentStatuses:
+          type: array
+          items: { type: string, enum: [student, not_student] }
+        employmentStatuses:
+          type: array
+          items: { type: string, enum: [employed, unemployed, self_employed, farmer] }
+        socialCategories:
+          type: array
+          items: { type: string, enum: [general, sc, st, obc, ews] }
+        gender:
+          type: array
+          items: { type: string, enum: [woman, man, other] }
+      additionalProperties: false
+    Scheme:
+      type: object
+      required: [id, name, category, governmentLevel, regions, intendedBeneficiaries, benefits, criteria, requiredDocuments, applicationSteps, informationUrl, applicationUrl, lastVerifiedAt, active, demoData, createdAt, updatedAt]
+      properties:
+        id: { type: integer }
+        name: { type: string }
+        category: { type: string }
+        governmentLevel: { type: string, enum: [central, state] }
+        regions:
+          type: array
+          items: { type: string }
+        intendedBeneficiaries:
+          type: array
+          items: { type: string }
+        benefits:
+          type: array
+          items: { type: string }
+        criteria: { $ref: "#/components/schemas/SchemeCriteria" }
+        requiredDocuments:
+          type: array
+          items: { type: string }
+        applicationSteps:
+          type: array
+          items: { type: string }
+        informationUrl: { type: string, format: uri }
+        applicationUrl: { type: string, format: uri }
+        lastVerifiedAt: { type: ["string", "null"], format: date }
+        active: { type: boolean }
+        demoData: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    SchemeInput:
+      type: object
+      required: [name, category, governmentLevel, regions, intendedBeneficiaries, benefits, criteria, requiredDocuments, applicationSteps, informationUrl, applicationUrl, lastVerifiedAt]
+      properties:
+        name: { type: string, minLength: 2, maxLength: 200 }
+        category: { type: string, minLength: 2, maxLength: 80 }
+        governmentLevel: { type: string, enum: [central, state] }
+        regions: { type: array, items: { type: string }, minItems: 1 }
+        intendedBeneficiaries: { type: array, items: { type: string } }
+        benefits: { type: array, items: { type: string } }
+        criteria: { $ref: "#/components/schemas/SchemeCriteria" }
+        requiredDocuments: { type: array, items: { type: string } }
+        applicationSteps: { type: array, items: { type: string } }
+        informationUrl: { type: string, format: uri }
+        applicationUrl: { type: string, format: uri }
+        lastVerifiedAt: { type: ["string", "null"], format: date }
+        demoData: { type: boolean, default: false }
+    SchemeUpdate:
+      type: object
+      properties:
+        name: { type: string, minLength: 2, maxLength: 200 }
+        category: { type: string, minLength: 2, maxLength: 80 }
+        governmentLevel: { type: string, enum: [central, state] }
+        regions: { type: array, items: { type: string }, minItems: 1 }
+        intendedBeneficiaries: { type: array, items: { type: string } }
+        benefits: { type: array, items: { type: string } }
+        criteria: { $ref: "#/components/schemas/SchemeCriteria" }
+        requiredDocuments: { type: array, items: { type: string } }
+        applicationSteps: { type: array, items: { type: string } }
+        informationUrl: { type: string, format: uri }
+        applicationUrl: { type: string, format: uri }
+        lastVerifiedAt: { type: ["string", "null"], format: date }
+        active: { type: boolean }
+        demoData: { type: boolean }
+    ProfileAnswers:
+      type: object
+      required: [ageBand, state, residence, studentStatus, employmentStatus]
+      properties:
+        ageBand: { type: string, enum: [under18, 18to24, 25to34, 35to44, 45to59, 60plus, not_sure, prefer_not_to_say] }
+        state: { type: string, minLength: 2, maxLength: 80 }
+        residence: { type: string, enum: [rural, urban, not_sure, prefer_not_to_say] }
+        studentStatus: { type: string, enum: [student, not_student, not_sure, prefer_not_to_say] }
+        employmentStatus: { type: string, enum: [employed, unemployed, self_employed, farmer, not_sure, prefer_not_to_say] }
+      additionalProperties: false
+    SchemeMatch:
+      type: object
+      required: [scheme, status, matchedCriteria, criteriaToCheck]
+      properties:
+        scheme: { $ref: "#/components/schemas/Scheme" }
+        status: { type: string, enum: [potential_match, more_information_needed, does_not_appear_to_match] }
+        matchedCriteria: { type: array, items: { type: string } }
+        criteriaToCheck: { type: array, items: { type: string } }
+    SchemeSummary:
+      type: object
+      required: [activeCount, categoryCount, centralCount, stateCount, categories]
+      properties:
+        activeCount: { type: integer }
+        categoryCount: { type: integer }
+        centralCount: { type: integer }
+        stateCount: { type: integer }
+        categories: { type: array, items: { type: string } }
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string }
 

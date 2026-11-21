@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Schemes Discovery"
+description = "A responsive guide that helps people in India discover government schemes, compare their answers with published criteria, and continue to official application sources."
+version = "1.0.0"
+id = "artifacts/schemes-discovery"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 25282
+
+[services.development]
+run = "pnpm --filter @workspace/schemes-discovery run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/schemes-discovery", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/schemes-discovery/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "25282"
+BASE_PATH = "/"
