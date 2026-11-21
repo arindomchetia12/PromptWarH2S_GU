@@ -1,8 +1,6 @@
 import { useMemo, useState } from 'react';
 import {
-  getGetSchemeSummaryQueryKey,
   getListSchemesQueryKey,
-  useGetSchemeSummary,
   useListSchemes,
 } from '@workspace/api-client-react';
 import {
@@ -85,10 +83,6 @@ export default function HomePage() {
   const [, setLocation] = useLocation();
   const [selectedCategory, setSelectedCategory] = useState('');
 
-  const summary = useGetSchemeSummary({
-    query: { queryKey: getGetSchemeSummaryQueryKey() },
-  });
-
   const allSchemesQuery = useListSchemes(undefined, {
     query: { queryKey: getListSchemesQueryKey(undefined) },
   });
@@ -103,11 +97,10 @@ export default function HomePage() {
     return map;
   }, [allSchemes]);
 
-  const categoriesWithRecords = useMemo(() => {
-    const fromSummary = summary.data?.categories ?? [];
-    if (fromSummary.length > 0) return fromSummary;
-    return Object.keys(categoryCounts).sort();
-  }, [summary.data?.categories, categoryCounts]);
+  const categoriesWithRecords = useMemo(
+    () => Object.keys(categoryCounts).sort(),
+    [categoryCounts],
+  );
 
   const featuredSchemes = useMemo(() => {
     const filtered = selectedCategory
@@ -368,7 +361,7 @@ export default function HomePage() {
                   href="/about"
                   className="inline-flex min-h-12 items-center gap-2 rounded-xl border border-[#1769AA]/30 bg-white px-5 py-2.5 text-base font-bold text-[#123E67] hover:bg-[#DCEFFA]"
                 >
-                  See official source audit
+                  Learn more about Suvidha
                 </Link>
               </div>
             </div>

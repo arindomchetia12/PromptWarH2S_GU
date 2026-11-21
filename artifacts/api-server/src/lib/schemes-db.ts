@@ -41,7 +41,40 @@ function mapSupabaseRow(row: any): Scheme {
   };
 }
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+let cachedSchemes: Scheme[] | null = null;
+let cacheExpiresAt = 0;
+let inflightPromise: Promise<Scheme[]> | null = null;
+
+function cleanEnvValue(raw: string | undefined, fallback: string): string {
+  if (!raw) return fallback;
+  const cleaned = raw.trim().replace(/^["']+|["']+$/g, "").trim();
+  return cleaned || fallback;
+}
+
 export async function getAllSchemes(): Promise<Scheme[]> {
+  const now = Date.now();
+  if (cachedSchemes && now < cacheExpiresAt) {
+    return cachedSchemes;
+  }
+  if (inflightPromise) {
+    return inflightPromise;
+  }
+
+  inflightPromise = loadSchemesFromSource().then((rows) => {
+    cachedSchemes = rows;
+    cacheExpiresAt = Date.now() + CACHE_TTL_MS;
+    return rows;
+  });
+
+  try {
+    return await inflightPromise;
+  } finally {
+    inflightPromise = null;
+  }
+}
+
+async function loadSchemesFromSource(): Promise<Scheme[]> {
   const dbUrl = process.env.DATABASE_URL || "";
   const hasPasswordPlaceholder = dbUrl.includes("[YOUR-PASSWORD]");
 
@@ -73,28 +106,26 @@ export async function getAllSchemes(): Promise<Scheme[]> {
     }
   }
 
-  // Fallback to Supabase REST API with project credentials
-  const supabaseUrl = process.env.SUPABASE_URL || "https://jsmtqaenralamjnabuzg.supabase.co";
-  const supabaseKey =
-    process.env.SUPABASE_ANON_KEY ||
+  const defaultUrl = "https://jsmtqaenralamjnabuzg.supabase.co";
+  const defaultKey =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzbXRxYWVucmFsYW1qbmFidXpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUyMzE2MTIsImV4cCI6MjExMDgwNzYxMn0.X92InRtd-jDZFc4OfmHjtDPRQ9OwAQ1TswnJFxpyceM";
 
-  try {
-    const res = await fetch(`${supabaseUrl}/rest/v1/schemes?select=*&order=id.asc`, {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-      },
-    });
+  const rawUrl = cleanEnvValue(process.env.SUPABASE_URL, defaultUrl).replace(/\/+$/, "");
+  const supabaseUrl = rawUrl.startsWith("https://") ? rawUrl : defaultUrl;
+  const supabaseKey = cleanEnvValue(process.env.SUPABASE_ANON_KEY, defaultKey);
 
-    if (!res.ok) {
-      throw new Error(`Supabase API responded with status ${res.status}: ${res.statusText}`);
-    }
+  const res = await fetch(`${supabaseUrl}/rest/v1/schemes?select=*&order=id.asc`, {
+    headers: {
+      apikey: supabaseKey,
+      Authorization: `Bearer ${supabaseKey}`,
+      Accept: "application/json",
+    },
+  });
 
-    const data = await res.json();
-    return (data as any[]).map(mapSupabaseRow);
-  } catch (err) {
-    console.error("Failed to load schemes from Supabase REST API:", err);
-    throw err;
+  if (!res.ok) {
+    throw new Error(`Supabase API responded with status ${res.status}: ${res.statusText}`);
   }
+
+  const data = await res.json();
+  return (data as any[]).map(mapSupabaseRow);
 }

@@ -109,6 +109,8 @@ export function HeroSearch({
               <img
                 src="/images/assam-assembly.jpg"
                 alt="Assam Legislative Assembly complex in Dispur, Guwahati"
+                fetchPriority="high"
+                decoding="async"
                 className="h-48 w-full object-cover sm:h-56"
               />
               <figcaption className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#123E67]/95 via-[#123E67]/65 to-transparent px-4 pb-3 pt-8 text-white">

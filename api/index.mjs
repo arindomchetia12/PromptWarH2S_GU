@@ -132,7 +132,20 @@ function mapSupabaseRow(row) {
   };
 }
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+let cachedSchemes = null;
+let cacheExpiresAt = 0;
+let inflightSchemesPromise = null;
+
 async function fetchAllSchemes() {
+  const now = Date.now();
+  if (cachedSchemes && now < cacheExpiresAt) {
+    return cachedSchemes;
+  }
+  if (inflightSchemesPromise) {
+    return inflightSchemesPromise;
+  }
+
   const defaultUrl = "https://jsmtqaenralamjnabuzg.supabase.co";
   const defaultKey =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzbXRxYWVucmFsYW1qbmFidXpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUyMzE2MTIsImV4cCI6MjExMDgwNzYxMn0.X92InRtd-jDZFc4OfmHjtDPRQ9OwAQ1TswnJFxpyceM";
@@ -141,26 +154,40 @@ async function fetchAllSchemes() {
   const supabaseUrl = rawUrl.startsWith("https://") ? rawUrl : defaultUrl;
   const supabaseKey = cleanEnvValue(process.env.SUPABASE_ANON_KEY, defaultKey);
 
-  let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const res = await fetch(`${supabaseUrl}/rest/v1/schemes?select=*&order=id.asc`, {
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          Accept: "application/json",
-        },
-      });
-      if (!res.ok) {
-        throw new Error(`Supabase API error ${res.status}: ${res.statusText}`);
+  inflightSchemesPromise = (async () => {
+    let lastError;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await fetch(`${supabaseUrl}/rest/v1/schemes?select=*&order=id.asc`, {
+          headers: {
+            apikey: supabaseKey,
+            Authorization: `Bearer ${supabaseKey}`,
+            Accept: "application/json",
+          },
+        });
+        if (!res.ok) {
+          throw new Error(`Supabase API error ${res.status}: ${res.statusText}`);
+        }
+        const data = await res.json();
+        const mapped = Array.isArray(data) ? data.map(mapSupabaseRow) : [];
+        cachedSchemes = mapped;
+        cacheExpiresAt = Date.now() + CACHE_TTL_MS;
+        return mapped;
+      } catch (err) {
+        lastError = err;
       }
-      const data = await res.json();
-      return Array.isArray(data) ? data.map(mapSupabaseRow) : [];
-    } catch (err) {
-      lastError = err;
     }
+    if (cachedSchemes) {
+      return cachedSchemes;
+    }
+    throw lastError;
+  })();
+
+  try {
+    return await inflightSchemesPromise;
+  } finally {
+    inflightSchemesPromise = null;
   }
-  throw lastError;
 }
 
 function matchesSearchQuery(scheme, rawQuery) {
@@ -514,7 +541,7 @@ export async function GET(request) {
     }
 
     const cacheHeader = {
-      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+      "Cache-Control": "public, max-age=60, s-maxage=300, stale-while-revalidate=3600",
     };
 
     if (pathname === "/api/schemes/summary") {

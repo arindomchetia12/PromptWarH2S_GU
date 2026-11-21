@@ -9,32 +9,11 @@ import {
   LayoutGrid,
   RotateCcw,
   ShieldCheck,
-  Workflow,
 } from 'lucide-react';
 import { Link } from 'wouter';
 import { MatchReason } from '../components/MatchReason';
 import { OfficialSourceNotice } from '../components/OfficialSourceNotice';
 import { QuestionStep, type GuidedQuestion } from '../components/QuestionStep';
-
-interface PipelineStepTrace {
-  step: number;
-  node: string;
-  detail: string;
-}
-
-interface WebhookMatchResponse {
-  cleanedAnswers: ProfileAnswers;
-  pipelineSteps: PipelineStepTrace[];
-  matches: (SchemeMatch & {
-    formatted?: {
-      summaryExplanation: string;
-      nextSteps: string[];
-      requiredDocuments: string[];
-      officialApplicationUrl: string;
-      officialInformationUrl: string;
-    };
-  })[];
-}
 
 const FOCUS_QUESTION: GuidedQuestion = {
   key: 'focusCategory',
@@ -135,13 +114,11 @@ export default function FindPage() {
   const [formState, setFormState] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [webhookResult, setWebhookResult] = useState<WebhookMatchResponse | null>(null);
+  const [matches, setMatches] = useState<SchemeMatch[] | null>(null);
   const [showNonMatches, setShowNonMatches] = useState(false);
-  const [showPipelineTrace, setShowPipelineTrace] = useState(false);
 
   const focusCategory = formState.focusCategory ?? 'all';
 
-  // Only ask details needed by the selected scheme categories
   const activeQuestions = useMemo<GuidedQuestion[]>(() => {
     if (focusCategory === 'Education') {
       return [FOCUS_QUESTION, AGE_QUESTION, STATE_QUESTION, STUDENT_QUESTION];
@@ -172,7 +149,7 @@ export default function FindPage() {
     setFormState((prev) => ({ ...prev, [currentQuestion.key]: val }));
   };
 
-  const submitToWebhook = async () => {
+  const submitAnswers = async () => {
     setIsSubmitting(true);
     setSubmitError(null);
     try {
@@ -182,12 +159,10 @@ export default function FindPage() {
         residence: (formState.residence ?? 'not_sure') as ProfileAnswers['residence'],
         studentStatus: (formState.studentStatus ??
           (focusCategory === 'Agriculture' ? 'not_student' : 'not_sure')) as ProfileAnswers['studentStatus'],
-        employmentStatus: (formState.employmentStatus ??
-          (focusCategory === 'Education' ? 'not_sure' : 'not_sure')) as ProfileAnswers['employmentStatus'],
+        employmentStatus: (formState.employmentStatus ?? 'not_sure') as ProfileAnswers['employmentStatus'],
       };
 
-      // Webhook flow: Website form -> Webhook -> Edit Fields -> Database -> Code/If -> Sort -> Format -> Respond
-      const res = await fetch('/api/webhook/match', {
+      const res = await fetch('/api/schemes/match', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
@@ -198,8 +173,8 @@ export default function FindPage() {
         throw new Error(errData.error || 'Could not evaluate matching schemes.');
       }
 
-      const data = (await res.json()) as WebhookMatchResponse;
-      setWebhookResult(data);
+      const data = (await res.json()) as SchemeMatch[];
+      setMatches(data);
     } catch (err) {
       setSubmitError(
         err instanceof Error ? err.message : 'Something went wrong while matching schemes.',
@@ -214,7 +189,7 @@ export default function FindPage() {
     if (step < activeQuestions.length - 1) {
       setStep((prev) => prev + 1);
     } else {
-      submitToWebhook();
+      submitAnswers();
     }
   };
 
@@ -223,21 +198,21 @@ export default function FindPage() {
   };
 
   const handleEditAnswers = () => {
-    setWebhookResult(null);
+    setMatches(null);
     setStep(0);
   };
 
   const handleRestart = () => {
     setFormState({});
-    setWebhookResult(null);
+    setMatches(null);
     setSubmitError(null);
     setStep(0);
     setShowNonMatches(false);
   };
 
   const relevantMatches = useMemo(() => {
-    if (!webhookResult) return [];
-    return webhookResult.matches.filter((m) => {
+    if (!matches) return [];
+    return matches.filter((m) => {
       const catOk =
         focusCategory === 'all' ||
         m.scheme.category.toLowerCase() === focusCategory.toLowerCase();
@@ -246,13 +221,13 @@ export default function FindPage() {
         (m.status === 'potential_match' || m.status === 'more_information_needed')
       );
     });
-  }, [webhookResult, focusCategory]);
+  }, [matches, focusCategory]);
 
   const otherMatches = useMemo(() => {
-    if (!webhookResult) return [];
+    if (!matches) return [];
     const relevantIds = new Set(relevantMatches.map((m) => m.scheme.id));
-    return webhookResult.matches.filter((m) => !relevantIds.has(m.scheme.id));
-  }, [webhookResult, relevantMatches]);
+    return matches.filter((m) => !relevantIds.has(m.scheme.id));
+  }, [matches, relevantMatches]);
 
   return (
     <div className="page-wrap py-8 sm:py-12">
@@ -266,7 +241,7 @@ export default function FindPage() {
           Browse all schemes
         </Link>
 
-        {!webhookResult ? (
+        {!matches ? (
           <div className="mt-6 grid gap-6 lg:grid-cols-[0.78fr_1.22fr]">
             <aside className="rounded-2xl bg-[#123E67] p-6 text-white sm:p-7 on-dark">
               <span className="inline-block rounded-full bg-white/15 px-3 py-1 text-xs font-extrabold uppercase tracking-wider text-[#DCEFFA]">
@@ -276,7 +251,7 @@ export default function FindPage() {
                 Find schemes for me
               </h1>
               <p className="mt-3 text-base leading-relaxed text-[#DCEFFA]">
-                Answer a few simple questions. Your answers are sent through our transparent rule-checking workflow to find schemes that may fit.
+                Answer a few simple questions to see Assam State and Central government schemes that may fit your situation.
               </p>
 
               <div className="mt-6 space-y-3 border-t border-white/15 pt-5 text-sm text-[#DCEFFA]">
@@ -364,36 +339,6 @@ export default function FindPage() {
                     Start over
                   </button>
                 </div>
-              </div>
-
-              {/* Transparent 8-step Webhook Flow trace */}
-              <div className="mt-5 border-t border-[#1769AA]/15 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowPipelineTrace((prev) => !prev)}
-                  aria-expanded={showPipelineTrace}
-                  className="inline-flex items-center gap-2 text-sm font-bold text-[#1769AA] hover:text-[#123E67]"
-                >
-                  <Workflow size={16} aria-hidden="true" />
-                  <span>How these results were generated (8-step matching flow)</span>
-                  {showPipelineTrace ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                </button>
-
-                {showPipelineTrace && (
-                  <ol className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                    {webhookResult.pipelineSteps.map((s) => (
-                      <li
-                        key={s.step}
-                        className="rounded-xl border border-[#1769AA]/20 bg-[#F5F9FC] p-3 text-xs"
-                      >
-                        <span className="font-extrabold text-[#1769AA]">
-                          {s.step}. {s.node}
-                        </span>
-                        <p className="mt-1 text-[#203040]">{s.detail}</p>
-                      </li>
-                    ))}
-                  </ol>
-                )}
               </div>
             </div>
 

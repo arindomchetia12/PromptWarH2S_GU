@@ -33,6 +33,7 @@ export function SchemeCard({ scheme }: { scheme: Scheme }) {
           src={visual.src}
           alt={visual.alt}
           loading="lazy"
+          decoding="async"
           className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
         />
         <div className="absolute inset-0 bg-gradient-to-t from-[#123E67]/70 via-transparent to-[#123E67]/20" />
