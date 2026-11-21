@@ -1,4 +1,10 @@
-import { getGetSchemeQueryKey, useGetScheme, type Scheme } from '@workspace/api-client-react';
+import { useQueryClient } from '@tanstack/react-query';
+import {
+  getGetSchemeQueryKey,
+  getListSchemesQueryKey,
+  useGetScheme,
+  type Scheme,
+} from '@workspace/api-client-react';
 import {
   ArrowLeft,
   ArrowUpRight,
@@ -29,15 +35,23 @@ export default function SchemeDetailPage() {
   const params = useParams<{ id: string }>();
   const id = Number(params.id);
   const validId = Number.isInteger(id) && id > 0;
+  const queryClient = useQueryClient();
+
+  const cachedScheme = validId
+    ? queryClient
+        .getQueryData<Scheme[]>(getListSchemesQueryKey(undefined))
+        ?.find((item) => item.id === id)
+    : undefined;
 
   const query = useGetScheme(validId ? id : 0, {
     query: {
       queryKey: getGetSchemeQueryKey(validId ? id : 0),
-      enabled: validId,
+      enabled: validId && !cachedScheme,
+      initialData: cachedScheme,
     },
   });
 
-  const scheme = query.data;
+  const scheme = query.data ?? cachedScheme;
 
   return (
     <div className="page-wrap py-8 sm:py-12">

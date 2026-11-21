@@ -61,13 +61,54 @@ export function levelLabel(level: Scheme['governmentLevel']): string {
   return level === 'central' ? 'Central government' : 'State government';
 }
 
-const STOP_WORDS = new Set(['and', 'the', 'for', 'with', 'from', 'scheme', 'schemes', 'yojana']);
+const STOP_WORDS = new Set([
+  'and',
+  'the',
+  'for',
+  'with',
+  'from',
+  'in',
+  'of',
+  'to',
+  'a',
+  'an',
+  'support',
+  'scheme',
+  'schemes',
+  'yojana',
+  'assam',
+  'government',
+  'gov',
+]);
 
 export function searchTokens(query: string): string[] {
   return query
     .toLowerCase()
     .split(/[^a-z0-9]+/)
-    .filter((token) => token.length >= 3 && !STOP_WORDS.has(token));
+    .filter((token) => token.length >= 2 && !STOP_WORDS.has(token));
+}
+
+export function matchesSchemeQuery(scheme: Scheme, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+
+  const haystack = [
+    scheme.name,
+    scheme.category,
+    ...(scheme.regions ?? []),
+    ...(scheme.intendedBeneficiaries ?? []),
+    ...(scheme.benefits ?? []),
+    ...(scheme.requiredDocuments ?? []),
+    ...(scheme.applicationSteps ?? []),
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  if (haystack.includes(q)) return true;
+
+  const tokens = searchTokens(q);
+  if (tokens.length === 0) return haystack.includes(q);
+  return tokens.every((token) => haystack.includes(token));
 }
 
 /** Simple relevance score used to sort search results on the client. */

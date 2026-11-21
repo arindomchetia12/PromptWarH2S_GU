@@ -1,19 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  getGetSchemeSummaryQueryKey,
   getListSchemesQueryKey,
-  useGetSchemeSummary,
   useListSchemes,
-  type ListSchemesParams,
 } from '@workspace/api-client-react';
 import { CircleAlert, Compass, RefreshCw, Search } from 'lucide-react';
-import { Link, useSearch } from 'wouter';
+import { Link, useLocation, useSearch } from 'wouter';
 import { OfficialSourceNotice } from '../components/OfficialSourceNotice';
 import { SchemeCard } from '../components/SchemeCard';
 import { SchemeFilters, type SortOption } from '../components/SchemeFilters';
-import { relevanceScore } from '../lib/schemes';
+import { matchesSchemeQuery, relevanceScore } from '../lib/schemes';
 
 export default function BrowsePage() {
+  const [, setLocation] = useLocation();
   const searchString = useSearch();
   const initialParams = useMemo(() => new URLSearchParams(searchString), [searchString]);
 
@@ -23,51 +21,66 @@ export default function BrowsePage() {
   const [level, setLevel] = useState(() => initialParams.get('level') ?? '');
   const [sortBy, setSortBy] = useState<SortOption>('relevance');
 
+  // Keep filter state in sync whenever navigation URL query params change (including clearing to /browse)
   useEffect(() => {
     const params = new URLSearchParams(searchString);
-    if (params.has('q')) setQuery(params.get('q') ?? '');
-    if (params.has('category')) setCategory(params.get('category') ?? '');
-    if (params.has('state')) setState(params.get('state') ?? '');
-    if (params.has('level')) setLevel(params.get('level') ?? '');
+    setQuery(params.get('q') ?? '');
+    setCategory(params.get('category') ?? '');
+    setState(params.get('state') ?? '');
+    setLevel(params.get('level') ?? '');
   }, [searchString]);
 
-  const apiParams = useMemo<ListSchemesParams>(
-    () => ({
-      ...(query.trim() ? { q: query.trim() } : {}),
-      ...(category ? { category } : {}),
-      ...(state ? { state } : {}),
-      ...(level ? { governmentLevel: level as 'central' | 'state' } : {}),
-    }),
-    [query, category, state, level],
+  // Share the single cached /api/schemes query so navigating & filtering is instant (0 ms)
+  const list = useListSchemes(undefined, {
+    query: { queryKey: getListSchemesQueryKey(undefined) },
+  });
+
+  const allSchemes = list.data ?? [];
+
+  const categories = useMemo(
+    () => [...new Set(allSchemes.map((s) => s.category))].sort(),
+    [allSchemes],
   );
 
-  const summary = useGetSchemeSummary({
-    query: { queryKey: getGetSchemeSummaryQueryKey() },
-  });
-
-  const list = useListSchemes(apiParams, {
-    query: { queryKey: getListSchemesQueryKey(apiParams) },
-  });
-
   const sortedSchemes = useMemo(() => {
-    const items = [...(list.data ?? [])];
+    const catLower = category.trim().toLowerCase();
+    const stateLower = state.trim().toLowerCase();
+    const levelLower = level.trim().toLowerCase();
+
+    const filtered = allSchemes.filter((scheme) => {
+      if (catLower && scheme.category.toLowerCase() !== catLower) return false;
+      if (levelLower && scheme.governmentLevel.toLowerCase() !== levelLower) return false;
+      if (
+        stateLower &&
+        !scheme.regions.some(
+          (r) => r.toLowerCase() === 'all india' || r.toLowerCase() === stateLower,
+        )
+      ) {
+        return false;
+      }
+      return matchesSchemeQuery(scheme, query);
+    });
+
     if (sortBy === 'alphabetical') {
-      return items.sort((a, b) => a.name.localeCompare(b.name));
+      return [...filtered].sort((a, b) => a.name.localeCompare(b.name));
     }
     if (query.trim()) {
-      return items.sort((a, b) => {
+      return [...filtered].sort((a, b) => {
         const diff = relevanceScore(b, query) - relevanceScore(a, query);
         return diff !== 0 ? diff : a.name.localeCompare(b.name);
       });
     }
-    return items;
-  }, [list.data, sortBy, query]);
+    return filtered;
+  }, [allSchemes, query, category, state, level, sortBy]);
 
   const clearFilters = () => {
     setQuery('');
     setCategory('');
     setState('');
     setLevel('');
+    if (searchString) {
+      setLocation('/browse');
+    }
   };
 
   return (
@@ -78,7 +91,7 @@ export default function BrowsePage() {
             Suvidha Scheme Directory
           </p>
           <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-[#123E67] sm:text-4xl">
-            Browse & search schemes
+            Browse &amp; search schemes
           </h1>
           <p className="mt-2 max-w-2xl text-base text-[#203040]">
             Search by scheme name, keyword, category, or government level. Always check the official source before applying.
@@ -87,7 +100,7 @@ export default function BrowsePage() {
 
         <Link
           href="/find"
-          className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#DCEFFA] px-5 py-2.5 text-base font-bold text-[#123E67] hover:bg-[#1769AA] hover:text-white transition-colors"
+          className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-[#DCEFFA] px-5 py-2.5 text-base font-bold text-[#123E67] transition-colors hover:bg-[#1769AA] hover:text-white"
           data-testid="link-guided-from-browse"
         >
           <Compass size={19} aria-hidden="true" />
@@ -101,7 +114,7 @@ export default function BrowsePage() {
           onQueryChange={setQuery}
           category={category}
           onCategoryChange={setCategory}
-          categories={summary.data?.categories ?? []}
+          categories={categories}
           state={state}
           onStateChange={setState}
           level={level}
@@ -109,13 +122,13 @@ export default function BrowsePage() {
           sortBy={sortBy}
           onSortByChange={setSortBy}
           resultCount={sortedSchemes.length}
-          isLoading={list.isLoading}
+          isLoading={list.isLoading && allSchemes.length === 0}
           onClear={clearFilters}
         />
       </div>
 
       <div className="mt-7">
-        {list.isLoading ? (
+        {list.isLoading && allSchemes.length === 0 ? (
           <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-3" aria-label="Loading search results">
             {[0, 1, 2, 3, 4, 5].map((i) => (
               <div
@@ -129,7 +142,7 @@ export default function BrowsePage() {
               </div>
             ))}
           </div>
-        ) : list.isError ? (
+        ) : list.isError && allSchemes.length === 0 ? (
           <div className="rounded-2xl border border-[#1769AA]/25 bg-white p-10 text-center">
             <CircleAlert size={34} className="mx-auto text-[#1769AA]" aria-hidden="true" />
             <h2 className="mt-3 text-xl font-extrabold text-[#123E67]">
