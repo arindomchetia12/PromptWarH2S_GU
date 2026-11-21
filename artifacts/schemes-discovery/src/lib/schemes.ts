@@ -135,11 +135,56 @@ export interface SchemeVisual {
 }
 
 /**
- * Maps each scheme to a matching real-world Assam / Indian government scheme photograph.
+ * Maps each scheme to its own unique, matching Assam / Indian government scheme photograph.
  */
 export function schemeImage(scheme: Scheme): SchemeVisual {
   const lower = `${scheme.name} ${scheme.category}`.toLowerCase();
 
+  // --- Education Schemes (6 distinct photos) ---
+  if (lower.includes('scooty') || lower.includes('pragyan') || lower.includes('banikanta')) {
+    return {
+      src: '/images/pragyan-scooty.jpg',
+      alt: 'Assam college students with scooters under the Pragyan Bharati Merit Award scheme',
+      caption: 'Pragyan Bharati Scooty Merit Award',
+    };
+  }
+  if (lower.includes('anundoram') || lower.includes('borooah')) {
+    return {
+      src: '/images/student-award.jpg',
+      alt: 'Government merit award and laptop presentation to an Indian student',
+      caption: 'Anundoram Borooah Award Scheme',
+    };
+  }
+  if (lower.includes('fee waiver') || lower.includes('free admission')) {
+    return {
+      src: '/images/assam-education.jpg',
+      alt: 'Historic Cotton College campus in Guwahati, Assam representing free college admission',
+      caption: 'Assam Free Admission (Fee Waiver)',
+    };
+  }
+  if (lower.includes('abhinandan') || lower.includes('education loan')) {
+    return {
+      src: '/images/abhinandan-loan.jpg',
+      alt: 'Student and parent reviewing higher education loan subsidy documents',
+      caption: 'Abhinandan Education Loan Subsidy',
+    };
+  }
+  if (lower.includes('ishan uday')) {
+    return {
+      src: '/images/ishan-uday.jpg',
+      alt: 'Modern university campus in Northeast India under clear blue skies with students walking',
+      caption: 'Ishan Uday NER Scholarship',
+    };
+  }
+  if (lower.includes('post-matric') || lower.includes('post matric')) {
+    return {
+      src: '/images/post-matric.jpg',
+      alt: 'Assam college students studying together with textbooks and laptops in a university library',
+      caption: 'Assam Post-Matric Scholarship',
+    };
+  }
+
+  // --- Agriculture Schemes (6 distinct photos) ---
   if (lower.includes('pm kisan') || lower.includes('samman nidhi')) {
     return {
       src: '/images/pm-kisan.jpg',
@@ -154,11 +199,18 @@ export function schemeImage(scheme: Scheme): SchemeVisual {
       caption: 'PM-KUSUM Solar Irrigation',
     };
   }
-  if (lower.includes('kisan credit') || lower.includes('kcc') || lower.includes('afcss')) {
+  if (lower.includes('afcss') || lower.includes('farmers credit subsidy')) {
+    return {
+      src: '/images/afcss-credit.jpg',
+      alt: 'Assamese farmer standing beside green agricultural fields with modern farm equipment',
+      caption: 'Assam Farmers Credit Subsidy (AFCSS)',
+    };
+  }
+  if (lower.includes('kisan credit') || lower.includes('kcc')) {
     return {
       src: '/images/assam-tea.jpg',
       alt: 'Assam tea garden workers and small agricultural growers',
-      caption: 'Assam Farmers & Small Tea Growers',
+      caption: 'Kisan Credit Card — Assam Growers',
     };
   }
   if (lower.includes('fasal bima') || lower.includes('pmfby')) {
@@ -172,20 +224,13 @@ export function schemeImage(scheme: Scheme): SchemeVisual {
     return {
       src: '/images/assam-farmers.jpg',
       alt: 'Farmers transplanting rice seedlings in Golaghat, Assam',
-      caption: 'Assam Agriculture Support',
+      caption: 'MMKSSY Farm Tools Assistance',
     };
   }
-  if (lower.includes('anundoram') || lower.includes('borooah') || lower.includes('scooty') || lower.includes('pragyan')) {
+  if (lower.includes('education') || lower.includes('scholarship')) {
     return {
-      src: '/images/student-award.jpg',
-      alt: 'Government merit award and laptop presentation to an Indian student',
-      caption: 'Assam Student Merit Award',
-    };
-  }
-  if (lower.includes('education') || lower.includes('scholarship') || lower.includes('fee waiver') || lower.includes('loan')) {
-    return {
-      src: '/images/assam-education.jpg',
-      alt: 'Historic Cotton College campus in Guwahati, Assam representing higher education schemes',
+      src: '/images/post-matric.jpg',
+      alt: 'Students studying in an Assam university library',
       caption: 'Higher Education in Assam',
     };
   }

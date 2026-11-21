@@ -1,0 +1,17 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "vite",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "pnpm --filter @workspace/schemes-discovery run build",
+  "outputDirectory": "artifacts/schemes-discovery/dist/public",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "/api/index?__path=:path*"
+    },
+    {
+      "source": "/((?!api/|assets/|images/|favicon\\.svg|logo-suvidha\\.svg|robots\\.txt).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

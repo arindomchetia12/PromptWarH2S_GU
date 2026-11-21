@@ -39,7 +39,9 @@ import {
 
 const router: IRouter = Router();
 const REVIEW_AFTER_DAYS = 365;
-startSchemeSyncScheduler();
+if (!process.env.VERCEL) {
+  startSchemeSyncScheduler();
+}
 
 function requireAdmin(
   req: Parameters<Parameters<IRouter["get"]>[1]>[0],
