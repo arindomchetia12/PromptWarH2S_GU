@@ -13,7 +13,7 @@ import {
 export const GUIDANCE_NOTE =
   'Suvidha helps you discover schemes. A result does not confirm eligibility. Scheme rules can change, so check the official source before applying.';
 
-export const SUGGESTED_SEARCHES = ['Scholarship', 'Farmer support', 'Women and children', 'Healthcare'];
+export const SUGGESTED_SEARCHES = ['Scholarship', 'Farmer support', 'Fee waiver', 'Solar pump'];
 
 const CATEGORY_ICONS: Record<string, LucideIcon> = {
   education: GraduationCap,

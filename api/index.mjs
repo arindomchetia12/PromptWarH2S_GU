@@ -3,14 +3,36 @@
 const APPROVED_OFFICIAL_DOMAINS = [
   "assam.gov.in",
   "sebaonline.org",
+  "samarth.ac.in",
   "myscheme.gov.in",
   "india.gov.in",
   "pmkisan.gov.in",
   "pmfby.gov.in",
   "mnre.gov.in",
   "ugc.gov.in",
+  "ugc.ac.in",
   "scholarships.gov.in",
 ];
+
+const SEARCH_STOP_WORDS = new Set([
+  "and",
+  "the",
+  "for",
+  "with",
+  "from",
+  "in",
+  "of",
+  "to",
+  "a",
+  "an",
+  "support",
+  "scheme",
+  "schemes",
+  "yojana",
+  "assam",
+  "government",
+  "gov",
+]);
 
 const REVIEW_THRESHOLD_DAYS = 180;
 const SCHEDULE_INTERVAL_MS = 60 * 60 * 1000;
@@ -50,11 +72,17 @@ function corsHeaders() {
   };
 }
 
-function jsonResponse(data, status = 200) {
+function jsonResponse(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {
     status,
-    headers: corsHeaders(),
+    headers: { ...corsHeaders(), ...extraHeaders },
   });
+}
+
+function cleanEnvValue(raw, fallback) {
+  if (!raw || typeof raw !== "string") return fallback;
+  const cleaned = raw.trim().replace(/^["']+|["']+$/g, "").trim();
+  return cleaned || fallback;
 }
 
 function normalizeArray(val) {
@@ -105,25 +133,62 @@ function mapSupabaseRow(row) {
 }
 
 async function fetchAllSchemes() {
-  const supabaseUrl =
-    process.env.SUPABASE_URL || "https://jsmtqaenralamjnabuzg.supabase.co";
-  const supabaseKey =
-    process.env.SUPABASE_ANON_KEY ||
+  const defaultUrl = "https://jsmtqaenralamjnabuzg.supabase.co";
+  const defaultKey =
     "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImpzbXRxYWVucmFsYW1qbmFidXpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTUyMzE2MTIsImV4cCI6MjExMDgwNzYxMn0.X92InRtd-jDZFc4OfmHjtDPRQ9OwAQ1TswnJFxpyceM";
 
-  const res = await fetch(`${supabaseUrl}/rest/v1/schemes?select=*&order=id.asc`, {
-    headers: {
-      apikey: supabaseKey,
-      Authorization: `Bearer ${supabaseKey}`,
-    },
-  });
+  const rawUrl = cleanEnvValue(process.env.SUPABASE_URL, defaultUrl).replace(/\/+$/, "");
+  const supabaseUrl = rawUrl.startsWith("https://") ? rawUrl : defaultUrl;
+  const supabaseKey = cleanEnvValue(process.env.SUPABASE_ANON_KEY, defaultKey);
 
-  if (!res.ok) {
-    throw new Error(`Supabase API error ${res.status}: ${res.statusText}`);
+  let lastError;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch(`${supabaseUrl}/rest/v1/schemes?select=*&order=id.asc`, {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Accept: "application/json",
+        },
+      });
+      if (!res.ok) {
+        throw new Error(`Supabase API error ${res.status}: ${res.statusText}`);
+      }
+      const data = await res.json();
+      return Array.isArray(data) ? data.map(mapSupabaseRow) : [];
+    } catch (err) {
+      lastError = err;
+    }
   }
+  throw lastError;
+}
 
-  const data = await res.json();
-  return Array.isArray(data) ? data.map(mapSupabaseRow) : [];
+function matchesSearchQuery(scheme, rawQuery) {
+  const q = rawQuery.trim().toLowerCase();
+  if (!q) return true;
+
+  const searchText = [
+    scheme.name,
+    scheme.category,
+    ...scheme.regions,
+    ...scheme.intendedBeneficiaries,
+    ...scheme.benefits,
+    ...scheme.requiredDocuments,
+    ...scheme.applicationSteps,
+  ]
+    .join(" ")
+    .toLowerCase();
+
+  if (searchText.includes(q)) return true;
+
+  const tokens = q
+    .split(/[^a-z0-9]+/)
+    .filter((t) => t.length >= 2 && !SEARCH_STOP_WORDS.has(t));
+
+  if (tokens.length === 0) {
+    return searchText.includes(q);
+  }
+  return tokens.every((token) => searchText.includes(token));
 }
 
 function cleanAndOrganizeAnswers(input) {
@@ -336,8 +401,12 @@ async function runSyncReport(triggerType) {
       );
     }
     if (!isApproved) {
+      const unapproved = [
+        !isApprovedDomain(infoDomain) ? infoDomain || "missing info URL" : null,
+        !isApprovedDomain(appDomain) ? appDomain || "missing application URL" : null,
+      ].filter(Boolean);
       reviewReasons.push(
-        `Source domain (${infoDomain || "unknown"}) is outside the standard approved list.`,
+        `Source domain (${unapproved.join(", ")}) is outside the standard approved list.`,
       );
     }
     if (daysSince === null) {
@@ -444,17 +513,25 @@ export async function GET(request) {
       return jsonResponse({ status: "ok" });
     }
 
+    const cacheHeader = {
+      "Cache-Control": "public, s-maxage=60, stale-while-revalidate=300",
+    };
+
     if (pathname === "/api/schemes/summary") {
       const schemes = (await fetchAllSchemes()).filter((s) => s.active);
       const categories = [...new Set(schemes.map((s) => s.category))].sort();
-      return jsonResponse({
-        activeCount: schemes.length,
-        categoryCount: categories.length,
-        centralCount: schemes.filter((s) => s.governmentLevel === "central")
-          .length,
-        stateCount: schemes.filter((s) => s.governmentLevel === "state").length,
-        categories,
-      });
+      return jsonResponse(
+        {
+          activeCount: schemes.length,
+          categoryCount: categories.length,
+          centralCount: schemes.filter((s) => s.governmentLevel === "central")
+            .length,
+          stateCount: schemes.filter((s) => s.governmentLevel === "state").length,
+          categories,
+        },
+        200,
+        cacheHeader,
+      );
     }
 
     if (pathname === "/api/schemes/sync-status") {
@@ -476,19 +553,10 @@ export async function GET(request) {
           scheme.regions.some(
             (r) => r.toLowerCase() === "all india" || r.toLowerCase() === state,
           );
-        const searchText = [
-          scheme.name,
-          scheme.category,
-          ...scheme.regions,
-          ...scheme.intendedBeneficiaries,
-          ...scheme.benefits,
-        ]
-          .join(" ")
-          .toLowerCase();
-        return stateMatches && (!q || searchText.includes(q));
+        return stateMatches && matchesSearchQuery(scheme, q);
       });
 
-      return jsonResponse(results);
+      return jsonResponse(results, 200, cacheHeader);
     }
 
     const idMatch = pathname.match(/^\/api\/schemes\/(\d+)$/);
@@ -499,7 +567,7 @@ export async function GET(request) {
       if (!scheme) {
         return jsonResponse({ error: "Scheme not found." }, 404);
       }
-      return jsonResponse(scheme);
+      return jsonResponse(scheme, 200, cacheHeader);
     }
 
     return jsonResponse({ error: `Route not found: ${pathname}` }, 404);

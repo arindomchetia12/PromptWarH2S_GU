@@ -4,12 +4,14 @@ import { getAllSchemes } from "./schemes-db";
 export const APPROVED_OFFICIAL_DOMAINS = [
   "assam.gov.in",
   "sebaonline.org",
+  "samarth.ac.in",
   "myscheme.gov.in",
   "india.gov.in",
   "pmkisan.gov.in",
   "pmfby.gov.in",
   "mnre.gov.in",
   "ugc.gov.in",
+  "ugc.ac.in",
   "scholarships.gov.in",
 ];
 

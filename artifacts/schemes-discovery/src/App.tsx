@@ -17,7 +17,15 @@ import {
   Router as WouterRouter,
 } from 'wouter';
 
-const queryClient = new QueryClient();
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 2,
+      staleTime: 30_000,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
 function Router() {
   return (

@@ -100,8 +100,32 @@ router.get("/schemes", async (req, res): Promise<void> => {
     rows = rows.filter((s) => s.governmentLevel === parsed.data.governmentLevel);
   }
 
+  const stopWords = new Set([
+    "and",
+    "the",
+    "for",
+    "with",
+    "from",
+    "in",
+    "of",
+    "to",
+    "a",
+    "an",
+    "support",
+    "scheme",
+    "schemes",
+    "yojana",
+    "assam",
+    "government",
+    "gov",
+  ]);
   const state = parsed.data.state?.trim().toLowerCase();
   const query = parsed.data.q?.trim().toLowerCase();
+  const queryTokens = query
+    ? query
+        .split(/[^a-z0-9]+/)
+        .filter((t) => t.length >= 2 && !stopWords.has(t))
+    : [];
   const results = rows.filter((scheme) => {
     const stateMatches =
       !state ||
@@ -114,10 +138,16 @@ router.get("/schemes", async (req, res): Promise<void> => {
       ...scheme.regions,
       ...scheme.intendedBeneficiaries,
       ...scheme.benefits,
+      ...scheme.requiredDocuments,
+      ...scheme.applicationSteps,
     ]
       .join(" ")
       .toLowerCase();
-    return stateMatches && (!query || searchText.includes(query));
+    const queryMatches =
+      !query ||
+      searchText.includes(query) ||
+      (queryTokens.length > 0 && queryTokens.every((token) => searchText.includes(token)));
+    return stateMatches && queryMatches;
   });
 
   res.json(ListSchemesResponse.parse(results));
